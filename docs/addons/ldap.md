@@ -139,6 +139,7 @@ $this->authenticators['session'] = \CodeIgniter\Shield\Authentication\Authentica
 $this->validFields = ['username'];
 $this->allowRegistration = false;
 $this->allowMagicLinkLogins = false;
+$this->sessionConfig['allowRemembering'] = false;
 ```
 
 Register the normal Shield routes. An LDAP-only application can omit the public
@@ -254,10 +255,11 @@ actions and protect its credentials independently of the directory.
 
 ## Availability and session revocation
 
-LDAP-enabled web login requires fresh credentials when opening a new session.
-The authenticator disables remember-me token issuance on password login. During
-migration, expire existing remember-me tokens if application policy requires all
-users to prove their directory credentials on the next sign-in.
+LDAP password login verifies the submitted credentials with the directory.
+The authenticator disables remember-me token issuance on password login. Keep
+`allowRemembering` disabled if previous installations issued remember-me cookies
+and users must prove their directory credentials on the next sign-in. Revoke
+pre-migration remember-me tokens before re-enabling the feature.
 
 Directory eligibility is checked during password login. Existing Shield
 sessions and issued API tokens follow their existing lifetime and revocation
