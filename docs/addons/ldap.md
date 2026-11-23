@@ -123,18 +123,28 @@ be unique, readable, and stable across user renames and moves.
 
 ## Enable Shield web login
 
-In **app/Config/Auth.php**, register the `ldap` authenticator alongside the
-existing `session` authenticator. Shield's session filter and login actions
-continue to use the `session` alias and read the session created by LDAP.
-For an LDAP-only application, add these assignments after
-`parent::__construct()`:
+In **app/Config/Auth.php**, add the `ldap` entry to the existing
+`$authenticators` array. Shield's session filter and login actions use the
+`session` alias to read the session created by LDAP. With the default
+authenticator entries, the property looks like this:
 
 ```php
-$this->authenticators['ldap'] = \CodeIgniter\Shield\Authentication\Authenticators\LDAP::class;
-$this->views['login'] = '\App\Views\auth\ldap_login';
-$this->allowRegistration = false;
-$this->allowMagicLinkLogins = false;
-$this->sessionConfig['allowRemembering'] = false;
+public array $authenticators = [
+    'tokens'  => \CodeIgniter\Shield\Authentication\Authenticators\AccessTokens::class,
+    'session' => \CodeIgniter\Shield\Authentication\Authenticators\Session::class,
+    'hmac'    => \CodeIgniter\Shield\Authentication\Authenticators\HmacSha256::class,
+    'ldap'    => \CodeIgniter\Shield\Authentication\Authenticators\LDAP::class,
+];
+```
+
+Set the `login` entry in the existing `$views` array to
+`'\App\Views\auth\ldap_login'`. For an LDAP-only application, set
+`allowRemembering` to `false` in the existing `$sessionConfig` array and set
+these two properties:
+
+```php
+public bool $allowRegistration = false;
+public bool $allowMagicLinkLogins = false;
 ```
 
 Copy Shield's login view to **app/Views/auth/ldap_login.php**. Replace the
