@@ -15,6 +15,7 @@ namespace CodeIgniter\Shield\Authentication\LDAP;
 
 use CodeIgniter\Shield\Exceptions\LDAPException;
 use LDAP\Connection;
+use SensitiveParameter;
 
 /**
  * @phpstan-type DirectoryEntry array{dn: string, attributes: array<string, list<string>>}
@@ -52,6 +53,7 @@ final class NativeLDAPDirectory implements LDAPDirectoryInterface
         string $baseDn,
         string $filter,
         array $attributes,
+        #[SensitiveParameter]
         string $password,
         string $eligibilityFilter = '(objectClass=*)',
     ): array {
@@ -188,7 +190,7 @@ final class NativeLDAPDirectory implements LDAPDirectoryInterface
         }
     }
 
-    private function bind(Connection $ldap, string $dn, string $password, bool $serviceAccount): void
+    private function bind(Connection $ldap, string $dn, #[SensitiveParameter] string $password, bool $serviceAccount): void
     {
         // ext-ldap emits native warnings for rejected binds. Classify the result
         // by LDAP error code so directory diagnostics stay out of PHP error output.

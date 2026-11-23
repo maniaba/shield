@@ -174,9 +174,10 @@ $routes->post('login', static function (): RedirectResponse {
 Use session-based CSRF protection for the POST route and apply Shield's
 `auth-rates` filter to the authentication action routes. The LDAP handler
 redirects with an error message only. CodeIgniter's `withInput()` would copy
-the submitted password to session flash data. Set
+the submitted password to session flash data. The native LDAP transport
+redacts password arguments in its own exception frames. Set
 `zend.exception_ignore_args=On` in production PHP settings to keep submitted
-credentials out of exception traces. [Shield controller filters](../references/controller_filters.md#rate-limiting)
+credentials out of exception traces in application code too. [Shield controller filters](../references/controller_filters.md#rate-limiting)
 
 ## Login eligibility
 

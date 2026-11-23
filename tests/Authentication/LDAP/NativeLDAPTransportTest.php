@@ -20,6 +20,7 @@ use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Attributes\PreserveGlobalState;
 use PHPUnit\Framework\Attributes\RunTestsInSeparateProcesses;
 use PHPUnit\Framework\TestCase;
+use SensitiveParameterValue;
 use Tests\Support\LDAP\NativeLDAPStub;
 
 /**
@@ -181,7 +182,8 @@ final class NativeLDAPTransportTest extends TestCase
 
     public function testInvalidServiceCredentialsStopFailover(): void
     {
-        NativeLDAPStub::$bindErrors = [self::FIRST_ENDPOINT => 49];
+        NativeLDAPStub::$bindErrors        = [self::FIRST_ENDPOINT => 49];
+        NativeLDAPStub::$warnOnBindFailure = true;
 
         $this->expectException(LDAPException::class);
         $this->expectExceptionMessage('service_bind_failed');
@@ -191,6 +193,35 @@ final class NativeLDAPTransportTest extends TestCase
         } finally {
             $this->assertSame([self::FIRST_ENDPOINT], NativeLDAPStub::$connected);
             $this->assertSame(1, NativeLDAPStub::$unbound);
+        }
+    }
+
+    public function testNativeTraceRedactsSubmittedAndServicePasswords(): void
+    {
+        $this->assertNotFalse(ini_set('zend.exception_ignore_args', '0'));
+
+        NativeLDAPStub::$bindErrors = [self::FIRST_ENDPOINT => 49];
+        $connection                 = $this->connection();
+
+        try {
+            (new NativeLDAPDirectory())->authenticate(
+                $connection,
+                $connection->baseDn,
+                '(uid=alice)',
+                ['uid'],
+                'synthetic-user-password',
+            );
+            $this->fail('Expected a bind failure.');
+        } catch (LDAPException $exception) {
+            $frames = array_filter(
+                $exception->getTrace(),
+                static fn (array $frame): bool => ($frame['class'] ?? null) === NativeLDAPDirectory::class,
+            );
+            $arguments = array_column($frames, 'args', 'function');
+
+            $this->assertSame('service_bind_failed', $exception->reason);
+            $this->assertInstanceOf(SensitiveParameterValue::class, $arguments['authenticate'][4]);
+            $this->assertInstanceOf(SensitiveParameterValue::class, $arguments['bind'][2]);
         }
     }
 

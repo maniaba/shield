@@ -32,11 +32,12 @@ final class NativeLDAPStub
      */
     public static array $bindErrors = [];
 
-    public static int $lastError     = 0;
-    public static string $diagnostic = '';
-    public static bool $searchFails  = false;
-    public static int $searchCode    = 0;
-    public static bool $hasReference = false;
+    public static bool $warnOnBindFailure = false;
+    public static int $lastError          = 0;
+    public static string $diagnostic      = '';
+    public static bool $searchFails       = false;
+    public static int $searchCode         = 0;
+    public static bool $hasReference      = false;
 
     /**
      * @var list<string> Distinguished names in the search result.

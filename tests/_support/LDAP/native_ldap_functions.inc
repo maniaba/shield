@@ -79,6 +79,10 @@ function ldap_bind(Connection $connection, string $dn, string $password): bool
     $uri                       = NativeLDAPStub::$connected[array_key_last(NativeLDAPStub::$connected)];
     NativeLDAPStub::$lastError = NativeLDAPStub::$bindErrors[$uri] ?? 0;
 
+    if (NativeLDAPStub::$lastError !== 0 && NativeLDAPStub::$warnOnBindFailure) {
+        trigger_error('Untrusted LDAP bind diagnostic', E_USER_WARNING);
+    }
+
     return NativeLDAPStub::$lastError === 0;
 }
 
