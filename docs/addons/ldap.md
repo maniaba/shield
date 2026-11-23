@@ -36,7 +36,7 @@ not chase LDAP referrals.
 
 ## Configure Active Directory
 
-Create **app/Config/AuthLdap.php**. Load the service-account secret from the
+Create **app/Config/AuthLDAP.php**. Load the service-account secret from the
 environment or from your secrets provider. Keep it out of source control and
 application diagnostics.
 
@@ -47,17 +47,17 @@ declare(strict_types=1);
 
 namespace Config;
 
-use CodeIgniter\Shield\Authentication\LDAP\LdapConnection;
-use CodeIgniter\Shield\Config\AuthLdap as ShieldAuthLdap;
+use CodeIgniter\Shield\Authentication\LDAP\LDAPConnection;
+use CodeIgniter\Shield\Config\AuthLDAP as ShieldAuthLDAP;
 
-class AuthLdap extends ShieldAuthLdap
+class AuthLDAP extends ShieldAuthLDAP
 {
     public string $defaultConnection = 'corporate';
 
     protected function connections(): array
     {
         return [
-            'corporate' => new LdapConnection(
+            'corporate' => new LDAPConnection(
                 id: 'corporate',
                 hosts: ['dc01.example.com', 'dc02.example.com'],
                 baseDn: 'DC=example,DC=com',
@@ -100,7 +100,7 @@ StartTLS extension on the port you configure.
 
 ```php
 return [
-    'openldap' => new LdapConnection(
+    'openldap' => new LDAPConnection(
         id: 'openldap',
         hosts: ['ldap.example.org'],
         baseDn: 'dc=example,dc=org',
@@ -124,7 +124,7 @@ be unique, readable, and stable across user renames and moves.
 ## Enable Shield web login
 
 In **app/Config/Auth.php**, configure the existing `session` alias to use
-`CodeIgniter\Shield\Authentication\Authenticators\Ldap::class`. Keep your
+`CodeIgniter\Shield\Authentication\Authenticators\LDAP::class`. Keep your
 other aliases and the existing default authenticator and chain. Set
 `$validFields` to `['username']`. The bundled login form accepts both simple
 usernames and UPNs. If you override the view or validation rules, use a text
@@ -135,7 +135,7 @@ For example, add these assignments to the application `Auth` constructor after
 calling `parent::__construct()`:
 
 ```php
-$this->authenticators['session'] = \CodeIgniter\Shield\Authentication\Authenticators\Ldap::class;
+$this->authenticators['session'] = \CodeIgniter\Shield\Authentication\Authenticators\LDAP::class;
 $this->validFields = ['username'];
 $this->allowRegistration = false;
 $this->allowMagicLinkLogins = false;
@@ -218,14 +218,14 @@ workflow, verify the account in the directory and confirm which Shield user
 should own it. Then explicitly link the two identities:
 
 ```php
-use CodeIgniter\Shield\Authentication\LDAP\LdapUserResolver;
+use CodeIgniter\Shield\Authentication\LDAP\LDAPUserResolver;
 
-$resolver = new LdapUserResolver(auth()->getProvider());
+$resolver = new LDAPUserResolver(auth()->getProvider());
 $resolver->link('corporate', '00112233-4455-6677-8899-aabbccddeeff', 42);
 ```
 
 The example uses a canonical AD GUID and Shield user ID `42`. Convert the
-16-byte LDAP `objectGUID` value with `LdapUserResolver::normalizeObjectGuid()`
+16-byte LDAP `objectGUID` value with `LDAPUserResolver::normalizeObjectGuid()`
 when reading it directly from LDAP. Use the `entryUUID` string as returned by
 OpenLDAP. A link conflicts if the same directory identity is already linked
 to another Shield user. Renaming an account or moving it to a new DN preserves
@@ -247,10 +247,10 @@ activates it through its trusted activation workflow.
 ## Local-only, LDAP-only, and hybrid login
 
 For local-only login, keep the ordinary `Session` authenticator under the
-`session` alias. For LDAP-only login, configure `Ldap` as described above and
+`session` alias. For LDAP-only login, configure `LDAP` as described above and
 leave `$localAccounts` empty. An application can enable hybrid login by listing
 the exact identifiers and corresponding Shield user IDs assigned to local
-password login in **app/Config/AuthLdap.php**:
+password login in **app/Config/AuthLDAP.php**:
 
 ```php
 public array $localAccounts = ['local-operator' => 10];
@@ -288,10 +288,10 @@ CSRF protection, and rate limits. Request only the attributes an operator needs,
 and keep raw results out of ordinary application logs.
 
 ```php
-use CodeIgniter\Shield\Authentication\LDAP\LdapFilter;
-use CodeIgniter\Shield\Exceptions\LdapException;
+use CodeIgniter\Shield\Authentication\LDAP\LDAPFilter;
+use CodeIgniter\Shield\Exceptions\LDAPException;
 
-$config = config('AuthLdap');
+$config = config('AuthLDAP');
 $connectionIds = $config->connectionIds();
 $directory = service('ldapDirectory');
 
@@ -303,18 +303,18 @@ try {
     $entries = $directory->preview(
         $connection,
         $connection->userBaseDn ?? $connection->baseDn,
-        LdapFilter::all($connection->loginFilter, $connection->eligibilityFilter),
+        LDAPFilter::all($connection->loginFilter, $connection->eligibilityFilter),
         ['sAMAccountName', 'displayName'],
         20,
     );
-} catch (LdapException $exception) {
+} catch (LDAPException $exception) {
     log_message('warning', 'LDAP diagnostic failed ({reason}).', ['reason' => $exception->reason]);
 }
 ```
 
 Use a configured group search base and a trusted group filter with the same
 `preview()` method to inspect groups. For a specific identifier, combine the
-trusted filter with `LdapFilter::equal($attribute, $identifier)`. LDAP attribute
+trusted filter with `LDAPFilter::equal($attribute, $identifier)`. LDAP attribute
 names in returned entries are lower-case and values may be binary. To test user
 credentials without creating a Shield user, call the directory's `authenticate()`
 method with that exact-match filter, the password, and the configured eligibility
@@ -323,8 +323,8 @@ after the operation. The application login uses `auth('session')->attempt()`
 so configured login actions can complete through Shield.
 
 To fetch connection settings from a database or another application source,
-override `AuthLdap::getConnection()` and `AuthLdap::connectionIds()`. Return a
-validated `LdapConnection` and resolve its bind secret server-side. Present only
+override `AuthLDAP::getConnection()` and `AuthLDAP::connectionIds()`. Return a
+validated `LDAPConnection` and resolve its bind secret server-side. Present only
 connection IDs and the operational metadata your administrators need.
 
 ### Troubleshooting
@@ -354,7 +354,7 @@ continuous revalidation are outside this contribution.
 ## Testing against OpenLDAP
 
 The regular PHPUnit suite does not need a running directory. The optional
-`NativeLdapDirectoryIntegrationTest` uses the disposable OpenLDAP fixture in
+`NativeLDAPDirectoryIntegrationTest` uses the disposable OpenLDAP fixture in
 `tests/_support/LDAP`. With Docker, OpenSSL, the PHP LDAP extension, and the test
 dependencies available, run the following from the Shield checkout:
 
@@ -380,7 +380,7 @@ LDAPTLS_CACERT="$tls_dir/ca.pem" LDAPTLS_REQCERT=demand LDAPTLS_REQSAN=demand \
   SHIELD_LDAP_TEST_PORT=23890 SHIELD_LDAP_TEST_LDAPS_PORT=26360 \
   SHIELD_LDAP_TEST_WRONG_HOST=localhost \
   SHIELD_LDAP_TEST_UNTRUSTED_CA=/etc/ssl/certs/ca-certificates.crt \
-  vendor/bin/phpunit --filter NativeLdapDirectoryIntegrationTest
+  vendor/bin/phpunit --filter NativeLDAPDirectoryIntegrationTest
 
 docker stop shield-openldap-test
 ```

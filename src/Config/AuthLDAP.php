@@ -14,10 +14,10 @@ declare(strict_types=1);
 namespace CodeIgniter\Shield\Config;
 
 use CodeIgniter\Config\BaseConfig;
-use CodeIgniter\Shield\Authentication\LDAP\LdapConnection;
-use CodeIgniter\Shield\Exceptions\LdapException;
+use CodeIgniter\Shield\Authentication\LDAP\LDAPConnection;
+use CodeIgniter\Shield\Exceptions\LDAPException;
 
-class AuthLdap extends BaseConfig
+class AuthLDAP extends BaseConfig
 {
     public bool $enabled             = false;
     public string $defaultConnection = '';
@@ -35,14 +35,14 @@ class AuthLdap extends BaseConfig
     /**
      * Override this method to load a named connection from an application-owned provider.
      *
-     * @throws LdapException
+     * @throws LDAPException
      */
-    public function getConnection(string $id): LdapConnection
+    public function getConnection(string $id): LDAPConnection
     {
         $connection = $this->connections()[$id] ?? null;
 
         if ($connection === null || $connection->id !== $id) {
-            throw new LdapException('invalid_configuration');
+            throw new LDAPException('invalid_configuration');
         }
 
         return $connection;
@@ -59,7 +59,7 @@ class AuthLdap extends BaseConfig
     /**
      * Construct connections on demand so bind secrets stay out of the config cache.
      *
-     * @return array<string, LdapConnection>
+     * @return array<string, LDAPConnection>
      */
     protected function connections(): array
     {

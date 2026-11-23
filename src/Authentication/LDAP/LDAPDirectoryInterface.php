@@ -13,17 +13,17 @@ declare(strict_types=1);
 
 namespace CodeIgniter\Shield\Authentication\LDAP;
 
-interface LdapDirectoryInterface
+interface LDAPDirectoryInterface
 {
     /**
      * Check that the configured endpoint can establish and verify TLS.
      */
-    public function testConnection(LdapConnection $connection): void;
+    public function testConnection(LDAPConnection $connection): void;
 
     /**
      * Check that an endpoint accepts the configured service account.
      */
-    public function testBind(LdapConnection $connection): void;
+    public function testBind(LDAPConnection $connection): void;
 
     /**
      * Search for one user, verify their password, and apply the eligibility filter.
@@ -33,7 +33,7 @@ interface LdapDirectoryInterface
      * @return array{dn: string, attributes: array<string, list<string>>} Attribute names are lowercase.
      */
     public function authenticate(
-        LdapConnection $connection,
+        LDAPConnection $connection,
         string $baseDn,
         string $filter,
         array $attributes,
@@ -49,7 +49,7 @@ interface LdapDirectoryInterface
      * @return list<array{dn: string, attributes: array<string, list<string>>}> Attribute names are lowercase.
      */
     public function preview(
-        LdapConnection $connection,
+        LDAPConnection $connection,
         string $baseDn,
         string $filter,
         array $attributes,

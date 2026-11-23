@@ -14,10 +14,10 @@ declare(strict_types=1);
 namespace CodeIgniter\Shield\Authentication\LDAP;
 
 use Closure;
-use CodeIgniter\Shield\Exceptions\LdapException;
+use CodeIgniter\Shield\Exceptions\LDAPException;
 use Throwable;
 
-final readonly class LdapConnection
+final readonly class LDAPConnection
 {
     /**
      * @var Closure(): string
@@ -57,32 +57,32 @@ final readonly class LdapConnection
             || $searchTimeout < 1 || $searchTimeout > 60
             || $loginAttributes === [] || count($loginAttributes) > 10 || ! array_is_list($loginAttributes)
         ) {
-            throw new LdapException('invalid_configuration');
+            throw new LDAPException('invalid_configuration');
         }
 
         foreach ($hosts as $host) {
             if (filter_var($host, FILTER_VALIDATE_IP) === false
                 && filter_var($host, FILTER_VALIDATE_DOMAIN, FILTER_FLAG_HOSTNAME) === false
             ) {
-                throw new LdapException('invalid_endpoint');
+                throw new LDAPException('invalid_endpoint');
             }
         }
 
         foreach ([$baseDn, $userBaseDn ?? $baseDn, $bindDn] as $dn) {
             if (trim($dn) === '' || str_contains($dn, "\0")) {
-                throw new LdapException('invalid_configuration');
+                throw new LDAPException('invalid_configuration');
             }
         }
 
         if (is_string($bindPassword) && ($bindPassword === '' || str_contains($bindPassword, "\0"))) {
-            throw new LdapException('invalid_bind_secret');
+            throw new LDAPException('invalid_bind_secret');
         }
 
-        LdapFilter::validate($loginFilter);
-        LdapFilter::validate($eligibilityFilter);
+        LDAPFilter::validate($loginFilter);
+        LDAPFilter::validate($eligibilityFilter);
 
         foreach ([$externalIdAttribute, ...$loginAttributes, ...array_values($profileAttributes)] as $attribute) {
-            LdapFilter::validateAttribute($attribute);
+            LDAPFilter::validateAttribute($attribute);
         }
 
         // A closure keeps the secret out of JSON, var_export(), and serialization.
@@ -95,11 +95,11 @@ final readonly class LdapConnection
             $password = ($this->readBindPassword)();
             $valid    = $password !== '' && ! str_contains($password, "\0");
         } catch (Throwable) {
-            throw new LdapException('bind_secret_unavailable');
+            throw new LDAPException('bind_secret_unavailable');
         }
 
         if (! $valid) {
-            throw new LdapException('invalid_bind_secret');
+            throw new LDAPException('invalid_bind_secret');
         }
 
         return $password;

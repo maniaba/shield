@@ -13,10 +13,10 @@ declare(strict_types=1);
 
 namespace CodeIgniter\Shield\Tests\Authentication\LDAP;
 
-use CodeIgniter\Shield\Authentication\LDAP\LdapConnection;
-use CodeIgniter\Shield\Authentication\LDAP\LdapFilter;
-use CodeIgniter\Shield\Authentication\LDAP\NativeLdapDirectory;
-use CodeIgniter\Shield\Exceptions\LdapException;
+use CodeIgniter\Shield\Authentication\LDAP\LDAPConnection;
+use CodeIgniter\Shield\Authentication\LDAP\LDAPFilter;
+use CodeIgniter\Shield\Authentication\LDAP\NativeLDAPDirectory;
+use CodeIgniter\Shield\Exceptions\LDAPException;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Attributes\RunInSeparateProcess;
 use PHPUnit\Framework\TestCase;
@@ -24,7 +24,7 @@ use PHPUnit\Framework\TestCase;
 /**
  * @internal
  */
-final class NativeLdapDirectoryIntegrationTest extends TestCase
+final class NativeLDAPDirectoryIntegrationTest extends TestCase
 {
     private const BASE_DN      = 'dc=example,dc=test';
     private const USER_BASE_DN = 'ou=people,' . self::BASE_DN;
@@ -33,7 +33,7 @@ final class NativeLdapDirectoryIntegrationTest extends TestCase
     public function testUsesVerifiedTlsForLookupAndAuthentication(string $encryption): void
     {
         $connection = $this->connection($encryption);
-        $directory  = new NativeLdapDirectory();
+        $directory  = new NativeLDAPDirectory();
 
         $directory->testConnection($connection);
         $directory->testBind($connection);
@@ -66,10 +66,10 @@ final class NativeLdapDirectoryIntegrationTest extends TestCase
 
         $connection = $this->connection('starttls', [$host]);
 
-        $this->expectException(LdapException::class);
+        $this->expectException(LDAPException::class);
         $this->expectExceptionMessage('certificate_verification_failed');
 
-        (new NativeLdapDirectory())->testConnection($connection);
+        (new NativeLDAPDirectory())->testConnection($connection);
     }
 
     #[RunInSeparateProcess]
@@ -85,53 +85,53 @@ final class NativeLdapDirectoryIntegrationTest extends TestCase
         putenv('LDAPTLS_CACERT=' . $ca);
         putenv('LDAPTLS_CACERTDIR=');
 
-        $this->expectException(LdapException::class);
+        $this->expectException(LDAPException::class);
         $this->expectExceptionMessage('certificate_verification_failed');
 
-        (new NativeLdapDirectory())->testConnection($connection);
+        (new NativeLDAPDirectory())->testConnection($connection);
     }
 
     public function testRejectsAmbiguousSearchBeforeCheckingPassword(): void
     {
         $connection = $this->connection();
 
-        $this->expectException(LdapException::class);
+        $this->expectException(LDAPException::class);
         $this->expectExceptionMessage('ambiguous_user');
 
-        (new NativeLdapDirectory())->authenticate($connection, self::USER_BASE_DN, '(sn=Shared)', [], 'alicePassword!');
+        (new NativeLDAPDirectory())->authenticate($connection, self::USER_BASE_DN, '(sn=Shared)', [], 'alicePassword!');
     }
 
     public function testAppliesEligibilityFilterAfterBind(): void
     {
         $connection = $this->connection();
 
-        $this->expectException(LdapException::class);
+        $this->expectException(LDAPException::class);
         $this->expectExceptionMessage('ineligible_user');
 
-        (new NativeLdapDirectory())->authenticate($connection, self::USER_BASE_DN, '(uid=alice)', [], 'alicePassword!', '(uid=bob)');
+        (new NativeLDAPDirectory())->authenticate($connection, self::USER_BASE_DN, '(uid=alice)', [], 'alicePassword!', '(uid=bob)');
     }
 
     public function testRejectsInvalidCredentials(): void
     {
         $connection = $this->connection();
 
-        $this->expectException(LdapException::class);
+        $this->expectException(LDAPException::class);
         $this->expectExceptionMessage('invalid_credentials');
 
-        (new NativeLdapDirectory())->authenticate($connection, self::USER_BASE_DN, '(uid=alice)', [], 'wrong-password');
+        (new NativeLDAPDirectory())->authenticate($connection, self::USER_BASE_DN, '(uid=alice)', [], 'wrong-password');
     }
 
     public function testEscapesSubmittedIdentifier(): void
     {
         $connection = $this->connection();
 
-        $this->expectException(LdapException::class);
+        $this->expectException(LDAPException::class);
         $this->expectExceptionMessage('user_not_found');
 
-        (new NativeLdapDirectory())->authenticate(
+        (new NativeLDAPDirectory())->authenticate(
             $connection,
             self::USER_BASE_DN,
-            LdapFilter::equal('uid', 'alice*)(uid=*'),
+            LDAPFilter::equal('uid', 'alice*)(uid=*'),
             [],
             'alicePassword!',
         );
@@ -139,7 +139,7 @@ final class NativeLdapDirectoryIntegrationTest extends TestCase
 
     public function testPreviewReturnsABoundedSample(): void
     {
-        $entries = (new NativeLdapDirectory())->preview($this->connection(), self::USER_BASE_DN, '(sn=Shared)', ['uid'], 1);
+        $entries = (new NativeLDAPDirectory())->preview($this->connection(), self::USER_BASE_DN, '(sn=Shared)', ['uid'], 1);
 
         $this->assertCount(1, $entries);
         $this->assertContains($entries[0]['attributes']['uid'][0], ['alice', 'bob']);
@@ -148,7 +148,7 @@ final class NativeLdapDirectoryIntegrationTest extends TestCase
     public function testUsesNextEndpointWhenTheFirstIsUnavailable(): void
     {
         $connection = $this->connection('starttls', ['127.0.0.3', '127.0.0.1']);
-        $entry      = (new NativeLdapDirectory())->authenticate($connection, self::USER_BASE_DN, '(uid=alice)', ['uid'], 'alicePassword!');
+        $entry      = (new NativeLDAPDirectory())->authenticate($connection, self::USER_BASE_DN, '(uid=alice)', ['uid'], 'alicePassword!');
 
         $this->assertSame(['alice'], $entry['attributes']['uid']);
     }
@@ -156,7 +156,7 @@ final class NativeLdapDirectoryIntegrationTest extends TestCase
     /**
      * @param list<string> $hosts
      */
-    private function connection(string $encryption = 'starttls', array $hosts = ['127.0.0.1']): LdapConnection
+    private function connection(string $encryption = 'starttls', array $hosts = ['127.0.0.1']): LDAPConnection
     {
         $port = getenv($encryption === 'ldaps' ? 'SHIELD_LDAP_TEST_LDAPS_PORT' : 'SHIELD_LDAP_TEST_PORT');
 
@@ -164,7 +164,7 @@ final class NativeLdapDirectoryIntegrationTest extends TestCase
             $this->markTestSkipped('Start the OpenLDAP fixture and set its environment variables to run this test.');
         }
 
-        return new LdapConnection(
+        return new LDAPConnection(
             'test',
             $hosts,
             self::BASE_DN,

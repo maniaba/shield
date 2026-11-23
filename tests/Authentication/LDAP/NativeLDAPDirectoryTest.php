@@ -14,9 +14,9 @@ declare(strict_types=1);
 namespace CodeIgniter\Shield\Tests\Authentication\LDAP;
 
 use ArrayObject;
-use CodeIgniter\Shield\Authentication\LDAP\LdapConnection;
-use CodeIgniter\Shield\Authentication\LDAP\NativeLdapDirectory;
-use CodeIgniter\Shield\Exceptions\LdapException;
+use CodeIgniter\Shield\Authentication\LDAP\LDAPConnection;
+use CodeIgniter\Shield\Authentication\LDAP\NativeLDAPDirectory;
+use CodeIgniter\Shield\Exceptions\LDAPException;
 use CodeIgniter\Shield\Exceptions\RuntimeException;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
@@ -24,11 +24,11 @@ use PHPUnit\Framework\TestCase;
 /**
  * @internal
  */
-final class NativeLdapDirectoryTest extends TestCase
+final class NativeLDAPDirectoryTest extends TestCase
 {
     public function testRedactsBindSecretInConfigurationInspection(): void
     {
-        $connection = new LdapConnection('test', ['ldap.example.test'], 'dc=example,dc=test', 'cn=reader,dc=example,dc=test', 'readerPassword!');
+        $connection = new LDAPConnection('test', ['ldap.example.test'], 'dc=example,dc=test', 'cn=reader,dc=example,dc=test', 'readerPassword!');
 
         $this->assertStringNotContainsString('readerPassword!', print_r($connection, true));
         $this->assertStringNotContainsString('readerPassword!', var_export($connection, true));
@@ -43,7 +43,7 @@ final class NativeLdapDirectoryTest extends TestCase
 
             return 'readerPassword!';
         };
-        $connection = new LdapConnection('test', ['ldap.example.test'], 'dc=example,dc=test', 'cn=reader,dc=example,dc=test', $secret);
+        $connection = new LDAPConnection('test', ['ldap.example.test'], 'dc=example,dc=test', 'cn=reader,dc=example,dc=test', $secret);
 
         $this->assertCount(0, $reads);
         $this->assertSame('readerPassword!', $connection->bindPassword());
@@ -60,7 +60,7 @@ final class NativeLdapDirectoryTest extends TestCase
         $this->expectExceptionMessage('LDAP operacija nije uspela (invalid_endpoint).');
 
         try {
-            new LdapConnection('test', ['ldap://example.test'], 'dc=example,dc=test', 'cn=reader,dc=example,dc=test', 'readerPassword!');
+            new LDAPConnection('test', ['ldap://example.test'], 'dc=example,dc=test', 'cn=reader,dc=example,dc=test', 'readerPassword!');
         } finally {
             $language->setLocale($locale);
         }
@@ -69,12 +69,12 @@ final class NativeLdapDirectoryTest extends TestCase
     #[DataProvider('provideRejectsPasswordsBeforeContactingDirectory')]
     public function testRejectsPasswordsBeforeContactingDirectory(string $password): void
     {
-        $connection = new LdapConnection('test', ['invalid.test'], 'dc=example,dc=test', 'cn=reader,dc=example,dc=test', 'readerPassword!');
+        $connection = new LDAPConnection('test', ['invalid.test'], 'dc=example,dc=test', 'cn=reader,dc=example,dc=test', 'readerPassword!');
 
-        $this->expectException(LdapException::class);
+        $this->expectException(LDAPException::class);
         $this->expectExceptionMessage('invalid_credentials');
 
-        (new NativeLdapDirectory())->authenticate($connection, $connection->baseDn, '(uid=alice)', [], $password);
+        (new NativeLDAPDirectory())->authenticate($connection, $connection->baseDn, '(uid=alice)', [], $password);
     }
 
     /**

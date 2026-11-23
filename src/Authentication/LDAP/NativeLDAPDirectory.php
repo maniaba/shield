@@ -13,13 +13,13 @@ declare(strict_types=1);
 
 namespace CodeIgniter\Shield\Authentication\LDAP;
 
-use CodeIgniter\Shield\Exceptions\LdapException;
+use CodeIgniter\Shield\Exceptions\LDAPException;
 use LDAP\Connection;
 
 /**
  * @phpstan-type DirectoryEntry array{dn: string, attributes: array<string, list<string>>}
  */
-final class NativeLdapDirectory implements LdapDirectoryInterface
+final class NativeLDAPDirectory implements LDAPDirectoryInterface
 {
     private const TIME_LIMIT_EXCEEDED = 3;
     private const SIZE_LIMIT_EXCEEDED = 4;
@@ -35,20 +35,20 @@ final class NativeLdapDirectory implements LdapDirectoryInterface
     private const FILTER_ERROR  = -7;
     private const CONNECT_ERROR = -11;
 
-    public function testConnection(LdapConnection $connection): void
+    public function testConnection(LDAPConnection $connection): void
     {
         $ldap = $this->open($connection, false);
         ldap_unbind($ldap);
     }
 
-    public function testBind(LdapConnection $connection): void
+    public function testBind(LDAPConnection $connection): void
     {
         $ldap = $this->open($connection, true);
         ldap_unbind($ldap);
     }
 
     public function authenticate(
-        LdapConnection $connection,
+        LDAPConnection $connection,
         string $baseDn,
         string $filter,
         array $attributes,
@@ -56,12 +56,12 @@ final class NativeLdapDirectory implements LdapDirectoryInterface
         string $eligibilityFilter = '(objectClass=*)',
     ): array {
         if ($password === '' || str_contains($password, "\0")) {
-            throw new LdapException('invalid_credentials');
+            throw new LDAPException('invalid_credentials');
         }
 
         $attributes[] = $connection->externalIdAttribute;
         $this->validateSearch($baseDn, $filter, $attributes);
-        LdapFilter::validate($eligibilityFilter);
+        LDAPFilter::validate($eligibilityFilter);
 
         $ldap = $this->open($connection, true);
 
@@ -71,11 +71,11 @@ final class NativeLdapDirectory implements LdapDirectoryInterface
             $ids         = $entry['attributes'][$idAttribute] ?? [];
 
             if (count($ids) !== 1 || $ids[0] === '') {
-                throw new LdapException('invalid_external_identity');
+                throw new LDAPException('invalid_external_identity');
             }
 
-            $sameIdentity = LdapFilter::equal($connection->externalIdAttribute, $ids[0]);
-            $eligibility  = LdapFilter::all($filter, $eligibilityFilter, $sameIdentity);
+            $sameIdentity = LDAPFilter::equal($connection->externalIdAttribute, $ids[0]);
+            $eligibility  = LDAPFilter::all($filter, $eligibilityFilter, $sameIdentity);
 
             $this->bind($ldap, $entry['dn'], $password, false);
             $this->bind($ldap, $connection->bindDn, $connection->bindPassword(), true);
@@ -83,7 +83,7 @@ final class NativeLdapDirectory implements LdapDirectoryInterface
             $verified = $this->findExactlyOne($ldap, $connection, $entry['dn'], $eligibility, $attributes, true);
 
             if (($verified['attributes'][$idAttribute] ?? []) !== $ids) {
-                throw new LdapException('directory_identity_changed');
+                throw new LDAPException('directory_identity_changed');
             }
 
             return $verified;
@@ -93,14 +93,14 @@ final class NativeLdapDirectory implements LdapDirectoryInterface
     }
 
     public function preview(
-        LdapConnection $connection,
+        LDAPConnection $connection,
         string $baseDn,
         string $filter,
         array $attributes,
         int $limit = 20,
     ): array {
         if ($limit < 1 || $limit > 100) {
-            throw new LdapException('invalid_search_limit');
+            throw new LDAPException('invalid_search_limit');
         }
 
         $this->validateSearch($baseDn, $filter, $attributes);
@@ -117,33 +117,33 @@ final class NativeLdapDirectory implements LdapDirectoryInterface
      * Use the OpenLDAP client's process-level TLS policy. Changing CA options at
      * runtime can leave an older PHP build using a previously initialized context.
      */
-    private function open(LdapConnection $connection, bool $serviceBind): Connection
+    private function open(LDAPConnection $connection, bool $serviceBind): Connection
     {
         if (! extension_loaded('ldap')) {
-            throw new LdapException('extension_unavailable');
+            throw new LDAPException('extension_unavailable');
         }
 
         if (! defined('LDAP_OPT_NETWORK_TIMEOUT') || ! defined('LDAP_OPT_TIMEOUT')
                                                   || ! defined('LDAP_OPT_X_TLS_REQUIRE_CERT') || ! defined('LDAP_OPT_X_TLS_DEMAND')
                                                   || ! defined('LDAP_OPT_X_TLS_HARD') || ! function_exists('ldap_start_tls')
         ) {
-            throw new LdapException('unsupported_ldap_client');
+            throw new LDAPException('unsupported_ldap_client');
         }
 
-        $failure = new LdapException('directory_unavailable');
+        $failure = new LDAPException('directory_unavailable');
 
         foreach ($connection->hosts as $host) {
             $ldap = @ldap_connect($connection->endpoint($host));
 
             if ($ldap === false) {
-                throw new LdapException('tls_context_failed');
+                throw new LDAPException('tls_context_failed');
             }
 
             try {
                 $this->configure($ldap, $connection);
 
                 if ($connection->encryption === 'starttls' && ! @ldap_start_tls($ldap)) {
-                    throw new LdapException($this->transportFailure($ldap, ldap_errno($ldap)) ?? 'tls_failed');
+                    throw new LDAPException($this->transportFailure($ldap, ldap_errno($ldap)) ?? 'tls_failed');
                 }
 
                 if ($serviceBind) {
@@ -154,7 +154,7 @@ final class NativeLdapDirectory implements LdapDirectoryInterface
                 }
 
                 return $ldap;
-            } catch (LdapException $exception) {
+            } catch (LDAPException $exception) {
                 ldap_unbind($ldap);
 
                 if (! in_array($exception->reason, ['directory_unavailable', 'connection_timeout', 'search_timeout'], true)) {
@@ -168,12 +168,12 @@ final class NativeLdapDirectory implements LdapDirectoryInterface
         throw $failure;
     }
 
-    private function configure(Connection $ldap, LdapConnection $connection): void
+    private function configure(Connection $ldap, LDAPConnection $connection): void
     {
         if (! @ldap_get_option($ldap, LDAP_OPT_X_TLS_REQUIRE_CERT, $requireCert)
             || ! in_array($requireCert, [LDAP_OPT_X_TLS_DEMAND, LDAP_OPT_X_TLS_HARD], true)
         ) {
-            throw new LdapException('tls_verification_required');
+            throw new LDAPException('tls_verification_required');
         }
 
         if (! @ldap_set_option($ldap, LDAP_OPT_PROTOCOL_VERSION, 3)
@@ -182,7 +182,7 @@ final class NativeLdapDirectory implements LdapDirectoryInterface
             || ! @ldap_set_option($ldap, LDAP_OPT_NETWORK_TIMEOUT, $connection->connectTimeout)
             || ! @ldap_set_option($ldap, LDAP_OPT_TIMEOUT, $connection->searchTimeout)
         ) {
-            throw new LdapException('connection_configuration_failed');
+            throw new LDAPException('connection_configuration_failed');
         }
     }
 
@@ -194,7 +194,7 @@ final class NativeLdapDirectory implements LdapDirectoryInterface
 
         $code = ldap_errno($ldap);
 
-        throw new LdapException($this->transportFailure($ldap, $code)
+        throw new LDAPException($this->transportFailure($ldap, $code)
             ?? (! $serviceAccount && $code === self::INVALID_CREDENTIALS
                 ? 'invalid_credentials'
                 : ($serviceAccount ? 'service_bind_failed' : 'user_bind_failed')));
@@ -207,7 +207,7 @@ final class NativeLdapDirectory implements LdapDirectoryInterface
      */
     private function findExactlyOne(
         Connection $ldap,
-        LdapConnection $connection,
+        LDAPConnection $connection,
         string $baseDn,
         string $filter,
         array $attributes,
@@ -216,11 +216,11 @@ final class NativeLdapDirectory implements LdapDirectoryInterface
         $entries = $this->search($ldap, $connection, $baseDn, $filter, $attributes, 2, $baseOnly);
 
         if ($entries === []) {
-            throw new LdapException($baseOnly ? 'ineligible_user' : 'user_not_found');
+            throw new LDAPException($baseOnly ? 'ineligible_user' : 'user_not_found');
         }
 
         if (count($entries) > 1) {
-            throw new LdapException('ambiguous_user');
+            throw new LDAPException('ambiguous_user');
         }
 
         return $entries[0];
@@ -233,7 +233,7 @@ final class NativeLdapDirectory implements LdapDirectoryInterface
      */
     private function search(
         Connection $ldap,
-        LdapConnection $connection,
+        LDAPConnection $connection,
         string $baseDn,
         string $filter,
         array $attributes,
@@ -251,11 +251,11 @@ final class NativeLdapDirectory implements LdapDirectoryInterface
                 return [];
             }
 
-            throw new LdapException($this->searchFailure($ldap, $code));
+            throw new LDAPException($this->searchFailure($ldap, $code));
         }
 
         if (! @ldap_parse_result($ldap, $result, $code) || @ldap_first_reference($ldap, $result) !== false) {
-            throw new LdapException('incomplete_search');
+            throw new LDAPException('incomplete_search');
         }
 
         // Only accept the client-side size boundary when we actually received
@@ -263,7 +263,7 @@ final class NativeLdapDirectory implements LdapDirectoryInterface
         if ($code !== 0
             && ($code !== self::SIZE_LIMIT_EXCEEDED || ldap_count_entries($ldap, $result) !== $limit)
         ) {
-            throw new LdapException($this->searchFailure($ldap, $code));
+            throw new LDAPException($this->searchFailure($ldap, $code));
         }
 
         $entries = [];
@@ -272,7 +272,7 @@ final class NativeLdapDirectory implements LdapDirectoryInterface
             $dn = ldap_get_dn($ldap, $row);
 
             if ($dn === false || ($dn === '' && $baseDn !== '') || str_contains($dn, "\0")) {
-                throw new LdapException('invalid_directory_entry');
+                throw new LDAPException('invalid_directory_entry');
             }
 
             $values = [];
@@ -298,13 +298,13 @@ final class NativeLdapDirectory implements LdapDirectoryInterface
     private function validateSearch(string $baseDn, string $filter, array $attributes): void
     {
         if (trim($baseDn) === '' || str_contains($baseDn, "\0") || count($attributes) > 64) {
-            throw new LdapException('invalid_search');
+            throw new LDAPException('invalid_search');
         }
 
-        LdapFilter::validate($filter);
+        LDAPFilter::validate($filter);
 
         foreach ($attributes as $attribute) {
-            LdapFilter::validateAttribute($attribute);
+            LDAPFilter::validateAttribute($attribute);
         }
     }
 

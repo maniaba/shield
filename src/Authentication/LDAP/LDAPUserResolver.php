@@ -16,7 +16,7 @@ namespace CodeIgniter\Shield\Authentication\LDAP;
 use Closure;
 use CodeIgniter\Database\BaseConnection;
 use CodeIgniter\Shield\Entities\User;
-use CodeIgniter\Shield\Exceptions\LdapException;
+use CodeIgniter\Shield\Exceptions\LDAPException;
 use CodeIgniter\Shield\Models\UserIdentityModel;
 use CodeIgniter\Shield\Models\UserModel;
 use Throwable;
@@ -24,7 +24,7 @@ use Throwable;
 /**
  * Resolves verified directory identities to Shield users.
  */
-final readonly class LdapUserResolver
+final readonly class LDAPUserResolver
 {
     public const ID_TYPE = 'ldap';
 
@@ -58,19 +58,19 @@ final readonly class LdapUserResolver
 
             if ($identity === null) {
                 if (! $provision) {
-                    throw new LdapException('user_not_provisioned');
+                    throw new LDAPException('user_not_provisioned');
                 }
 
                 $username = $profile['username'] ?? null;
                 if ($username === null) {
-                    throw new LdapException('invalid_profile');
+                    throw new LDAPException('invalid_profile');
                 }
 
                 $this->checkUsername($username);
 
                 $userId = $this->users->insert($profile);
                 if ($userId === true) {
-                    throw new LdapException('synchronization_conflict');
+                    throw new LDAPException('synchronization_conflict');
                 }
 
                 $user = $this->readBackProfile($userId, $profile);
@@ -123,7 +123,7 @@ final readonly class LdapUserResolver
             if ($identity === null) {
                 $this->createIdentity($connectionId, $key, $userId);
             } elseif ((string) $identity->user_id !== (string) $user->id) {
-                throw new LdapException('identity_conflict');
+                throw new LDAPException('identity_conflict');
             }
 
             return $user;
@@ -136,7 +136,7 @@ final readonly class LdapUserResolver
     public static function normalizeObjectGuid(string $bytes): string
     {
         if (strlen($bytes) !== 16) {
-            throw new LdapException('invalid_identity');
+            throw new LDAPException('invalid_identity');
         }
 
         return bin2hex(strrev(substr($bytes, 0, 4)))
@@ -149,7 +149,7 @@ final readonly class LdapUserResolver
     private function identityKey(string $connectionId, string $externalId): string
     {
         if (preg_match('/\A[a-zA-Z0-9_-]{1,64}\z/', $connectionId) !== 1 || $externalId === '' || strlen($externalId) > 1024) {
-            throw new LdapException('invalid_identity');
+            throw new LDAPException('invalid_identity');
         }
 
         return hash('sha256', $connectionId . "\0" . $externalId);
@@ -175,7 +175,7 @@ final readonly class LdapUserResolver
                 || in_array($collapsed, $reserved, true)
                 || ($collapsed === 'username' && $field !== 'username')
             ) {
-                throw new LdapException('invalid_profile');
+                throw new LDAPException('invalid_profile');
             }
         }
 
@@ -188,7 +188,7 @@ final readonly class LdapUserResolver
                 || ! mb_check_encoding($username, 'UTF-8')
                 || mb_strlen($username, 'UTF-8') > 30
             ) {
-                throw new LdapException('invalid_profile');
+                throw new LDAPException('invalid_profile');
             }
 
             $profile['username'] = strtolower($username);
@@ -201,7 +201,7 @@ final readonly class LdapUserResolver
     {
         $owner = $this->users->findByCredentials(['username' => $username]);
         if ($owner !== null && ($ownerId === null || (string) $owner->id !== (string) $ownerId)) {
-            throw new LdapException('identity_conflict');
+            throw new LDAPException('identity_conflict');
         }
     }
 
@@ -209,7 +209,7 @@ final readonly class LdapUserResolver
     {
         $user = $this->users->findById($userId);
         if ($user === null) {
-            throw new LdapException('identity_conflict');
+            throw new LDAPException('identity_conflict');
         }
 
         return $user;
@@ -225,7 +225,7 @@ final readonly class LdapUserResolver
 
         foreach ($profile as $field => $value) {
             if (! array_key_exists($field, $stored) || $stored[$field] !== $value) {
-                throw new LdapException('invalid_profile');
+                throw new LDAPException('invalid_profile');
             }
         }
 
@@ -243,7 +243,7 @@ final readonly class LdapUserResolver
 
         $identity = $this->identities->getIdentityBySecret(self::ID_TYPE, $key);
         if ($identity === null || (string) $identity->user_id !== (string) $userId) {
-            throw new LdapException('synchronization_conflict');
+            throw new LDAPException('synchronization_conflict');
         }
     }
 
@@ -260,7 +260,7 @@ final readonly class LdapUserResolver
                 || ! $database->transStatus()
                 || ! $database->transBegin()
             ) {
-                throw new LdapException('synchronization_conflict');
+                throw new LDAPException('synchronization_conflict');
             }
 
             $strict = $database->transStrict;
@@ -269,7 +269,7 @@ final readonly class LdapUserResolver
             try {
                 $user = $operation();
                 if (! $database->transComplete()) {
-                    throw new LdapException('synchronization_conflict');
+                    throw new LDAPException('synchronization_conflict');
                 }
 
                 return $user;
@@ -282,11 +282,11 @@ final readonly class LdapUserResolver
                     $database->transStrict($strict);
                 }
             }
-        } catch (LdapException $e) {
+        } catch (LDAPException $e) {
             throw $e;
         } catch (Throwable) {
             // Model exceptions can contain SQL with directory and local account data.
-            throw new LdapException('synchronization_conflict');
+            throw new LDAPException('synchronization_conflict');
         }
     }
 

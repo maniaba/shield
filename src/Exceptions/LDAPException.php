@@ -13,7 +13,7 @@ declare(strict_types=1);
 
 namespace CodeIgniter\Shield\Exceptions;
 
-final class LdapException extends RuntimeException
+final class LDAPException extends RuntimeException
 {
     public function __construct(public readonly string $reason)
     {

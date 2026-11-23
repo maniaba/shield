@@ -13,35 +13,35 @@ declare(strict_types=1);
 
 namespace CodeIgniter\Shield\Tests\Authentication\LDAP;
 
-use CodeIgniter\Shield\Authentication\LDAP\LdapFilter;
-use CodeIgniter\Shield\Exceptions\LdapException;
+use CodeIgniter\Shield\Authentication\LDAP\LDAPFilter;
+use CodeIgniter\Shield\Exceptions\LDAPException;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 
 /**
  * @internal
  */
-final class LdapFilterTest extends TestCase
+final class LDAPFilterTest extends TestCase
 {
     public function testEscapesFilterOperatorsAndNonAsciiOctets(): void
     {
-        $escaped = LdapFilter::equal('uid', "a*)(objectClass=*)\\\x00\xff");
+        $escaped = LDAPFilter::equal('uid', "a*)(objectClass=*)\\\x00\xff");
 
         $this->assertSame('(uid=a\2a\29\28objectClass=\2a\29\5c\00\ff)', $escaped);
-        LdapFilter::validate($escaped);
+        LDAPFilter::validate($escaped);
     }
 
     public function testEscapesDnComponents(): void
     {
-        $this->assertSame('\23example\2c\3d\20', LdapFilter::escapeDnComponent('#example,= '));
-        $this->assertSame('\20x\00', LdapFilter::escapeDnComponent(" x\0"));
+        $this->assertSame('\23example\2c\3d\20', LDAPFilter::escapeDnComponent('#example,= '));
+        $this->assertSame('\20x\00', LDAPFilter::escapeDnComponent(" x\0"));
     }
 
     public function testCombinesNestedFiltersAndMatchingRules(): void
     {
         $disabled = '(userAccountControl:1.2.840.113556.1.4.803:=2)';
-        $login    = LdapFilter::any(LdapFilter::equal('sAMAccountName', 'alice'), LdapFilter::equal('userPrincipalName', 'alice'));
-        $filter   = LdapFilter::all('(objectCategory=person)', $login, LdapFilter::not($disabled));
+        $login    = LDAPFilter::any(LDAPFilter::equal('sAMAccountName', 'alice'), LDAPFilter::equal('userPrincipalName', 'alice'));
+        $filter   = LDAPFilter::all('(objectCategory=person)', $login, LDAPFilter::not($disabled));
 
         $this->assertSame(
             '(&(objectCategory=person)(|(sAMAccountName=alice)(userPrincipalName=alice))(!(userAccountControl:1.2.840.113556.1.4.803:=2)))',
@@ -52,10 +52,10 @@ final class LdapFilterTest extends TestCase
     #[DataProvider('provideRejectsInvalidFilters')]
     public function testRejectsInvalidFilters(string $filter): void
     {
-        $this->expectException(LdapException::class);
+        $this->expectException(LDAPException::class);
         $this->expectExceptionMessage('invalid_filter');
 
-        LdapFilter::validate($filter);
+        LDAPFilter::validate($filter);
     }
 
     /**

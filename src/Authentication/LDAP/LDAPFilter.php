@@ -13,9 +13,9 @@ declare(strict_types=1);
 
 namespace CodeIgniter\Shield\Authentication\LDAP;
 
-use CodeIgniter\Shield\Exceptions\LdapException;
+use CodeIgniter\Shield\Exceptions\LDAPException;
 
-final class LdapFilter
+final class LDAPFilter
 {
     private const IDENTIFIER = '(?:[a-zA-Z][a-zA-Z0-9-]*|(?:0|[1-9][0-9]*)(?:\.(?:0|[1-9][0-9]*))+)';
     private const ATTRIBUTE  = self::IDENTIFIER . '(?:;[a-zA-Z0-9-]+)*';
@@ -47,26 +47,26 @@ final class LdapFilter
     public static function escapeValue(string $value): string
     {
         return preg_replace_callback('/[\x00-\x1f\x7f-\xff()*\x5c]/', self::hexEscape(...), $value)
-            ?? throw new LdapException('invalid_filter_value');
+            ?? throw new LDAPException('invalid_filter_value');
     }
 
     public static function escapeDnComponent(string $value): string
     {
         return preg_replace_callback('/(^[ #]| $|[\x00-\x1f\x7f-\xff"+,;<>=\x5c])/', self::hexEscape(...), $value)
-            ?? throw new LdapException('invalid_dn_component');
+            ?? throw new LDAPException('invalid_dn_component');
     }
 
     public static function validateAttribute(string $attribute): void
     {
         if (strlen($attribute) > 128 || preg_match('/\A' . self::ATTRIBUTE . '\z/', $attribute) !== 1) {
-            throw new LdapException('invalid_attribute');
+            throw new LDAPException('invalid_attribute');
         }
     }
 
     public static function validate(string $filter): void
     {
         if (strlen($filter) > 16384 || preg_match('//u', $filter) !== 1 || self::parse($filter, 0, 0) !== strlen($filter)) {
-            throw new LdapException('invalid_filter');
+            throw new LDAPException('invalid_filter');
         }
     }
 
@@ -96,7 +96,7 @@ final class LdapFilter
     private static function parse(string $filter, int $offset, int $depth): int
     {
         if ($depth >= 32 || ($filter[$offset] ?? '') !== '(') {
-            throw new LdapException('invalid_filter');
+            throw new LDAPException('invalid_filter');
         }
 
         $offset++;
@@ -117,7 +117,7 @@ final class LdapFilter
         }
 
         if (($filter[$offset] ?? '') !== ')') {
-            throw new LdapException('invalid_filter');
+            throw new LDAPException('invalid_filter');
         }
 
         return $offset + 1;
@@ -128,7 +128,7 @@ final class LdapFilter
         $delimiter = strpos($item, '=');
 
         if ($delimiter === false) {
-            throw new LdapException('invalid_filter');
+            throw new LDAPException('invalid_filter');
         }
 
         $left  = substr($item, 0, $delimiter);
@@ -138,7 +138,7 @@ final class LdapFilter
             $name = '(?:' . self::ATTRIBUTE . '(?::dn)?(?::' . self::IDENTIFIER . ')?|(?::dn)?:' . self::IDENTIFIER . ')';
 
             if (preg_match('/\A' . $name . ':\z/i', $left) !== 1) {
-                throw new LdapException('invalid_filter');
+                throw new LDAPException('invalid_filter');
             }
 
             self::validateValue($value, false);
@@ -147,7 +147,7 @@ final class LdapFilter
         }
 
         if (preg_match('/\A' . self::ATTRIBUTE . '(?<operator>[~<>]?)\z/', $left, $matches) !== 1) {
-            throw new LdapException('invalid_filter');
+            throw new LDAPException('invalid_filter');
         }
 
         self::validateValue($value, $matches['operator'] === '');
@@ -158,7 +158,7 @@ final class LdapFilter
         $excluded = $allowWildcard ? '\x00()' : '\x00()*';
 
         if (preg_match('/\A(?:\x5c[0-9a-f]{2}|[^\x5c' . $excluded . '])*\z/i', $value) !== 1) {
-            throw new LdapException('invalid_filter');
+            throw new LDAPException('invalid_filter');
         }
     }
 }

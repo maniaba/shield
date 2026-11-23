@@ -13,32 +13,32 @@ declare(strict_types=1);
 
 namespace CodeIgniter\Shield\Authentication\Authenticators;
 
-use CodeIgniter\Shield\Authentication\LDAP\LdapDirectoryInterface;
-use CodeIgniter\Shield\Authentication\LDAP\LdapFilter;
-use CodeIgniter\Shield\Authentication\LDAP\LdapUserResolver;
-use CodeIgniter\Shield\Config\AuthLdap;
+use CodeIgniter\Shield\Authentication\LDAP\LDAPDirectoryInterface;
+use CodeIgniter\Shield\Authentication\LDAP\LDAPFilter;
+use CodeIgniter\Shield\Authentication\LDAP\LDAPUserResolver;
+use CodeIgniter\Shield\Config\AuthLDAP;
 use CodeIgniter\Shield\Entities\User;
-use CodeIgniter\Shield\Exceptions\LdapException;
+use CodeIgniter\Shield\Exceptions\LDAPException;
 use CodeIgniter\Shield\Models\UserModel;
 use CodeIgniter\Shield\Result;
 
-class Ldap extends Session
+class LDAP extends Session
 {
-    private readonly AuthLdap $ldapConfig;
-    private readonly LdapDirectoryInterface $directory;
-    private readonly LdapUserResolver $resolver;
+    private readonly AuthLDAP $ldapConfig;
+    private readonly LDAPDirectoryInterface $directory;
+    private readonly LDAPUserResolver $resolver;
 
     public function __construct(
         UserModel $provider,
-        ?AuthLdap $config = null,
-        ?LdapDirectoryInterface $directory = null,
-        ?LdapUserResolver $resolver = null,
+        ?AuthLDAP $config = null,
+        ?LDAPDirectoryInterface $directory = null,
+        ?LDAPUserResolver $resolver = null,
     ) {
         parent::__construct($provider);
 
-        $this->ldapConfig = $config ?? config('AuthLdap');
+        $this->ldapConfig = $config ?? config('AuthLDAP');
         $this->directory  = $directory ?? service('ldapDirectory');
-        $this->resolver   = $resolver ?? new LdapUserResolver($provider);
+        $this->resolver   = $resolver ?? new LDAPUserResolver($provider);
     }
 
     /**
@@ -87,7 +87,7 @@ class Ldap extends Session
             }
 
             return new Result(['success' => true, 'extraInfo' => $user]);
-        } catch (LdapException $exception) {
+        } catch (LDAPException $exception) {
             log_message('debug', 'Shield LDAP login rejected ({reason}).', ['reason' => $exception->reason]);
 
             return $this->failedResult();
@@ -112,16 +112,16 @@ class Ldap extends Session
         $connection   = $this->ldapConfig->getConnection($connectionId);
 
         if ($connection->id !== $connectionId) {
-            throw new LdapException('invalid_configuration');
+            throw new LDAPException('invalid_configuration');
         }
 
         $predicates = [];
 
         foreach ($connection->loginAttributes as $attribute) {
-            $predicates[] = LdapFilter::equal($attribute, $identifier);
+            $predicates[] = LDAPFilter::equal($attribute, $identifier);
         }
 
-        $filter = LdapFilter::all($connection->loginFilter, LdapFilter::any(...$predicates));
+        $filter = LDAPFilter::all($connection->loginFilter, LDAPFilter::any(...$predicates));
         $entry  = $this->directory->authenticate(
             $connection,
             $connection->userBaseDn ?? $connection->baseDn,
@@ -134,11 +134,11 @@ class Ldap extends Session
         $ids = $entry['attributes'][strtolower($connection->externalIdAttribute)] ?? [];
 
         if (count($ids) !== 1 || $ids[0] === '') {
-            throw new LdapException('invalid_identity');
+            throw new LDAPException('invalid_identity');
         }
 
         $externalId = strcasecmp($connection->externalIdAttribute, 'objectGUID') === 0
-            ? LdapUserResolver::normalizeObjectGuid($ids[0])
+            ? LDAPUserResolver::normalizeObjectGuid($ids[0])
             : $ids[0];
         $profile = [];
 
@@ -148,7 +148,7 @@ class Ldap extends Session
             if (count($values) === 1) {
                 $profile[$field] = $values[0];
             } elseif ($values !== []) {
-                throw new LdapException('invalid_profile');
+                throw new LDAPException('invalid_profile');
             }
         }
 

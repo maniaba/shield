@@ -15,13 +15,13 @@ namespace CodeIgniter\Shield\Tests\Controllers;
 
 use CodeIgniter\Config\Factories;
 use CodeIgniter\Shield\Authentication\Actions\Email2FA;
-use CodeIgniter\Shield\Authentication\Authenticators\Ldap;
-use CodeIgniter\Shield\Authentication\LDAP\LdapConnection;
-use CodeIgniter\Shield\Authentication\LDAP\LdapDirectoryInterface;
-use CodeIgniter\Shield\Authentication\LDAP\LdapUserResolver;
-use CodeIgniter\Shield\Config\AuthLdap;
+use CodeIgniter\Shield\Authentication\Authenticators\LDAP;
+use CodeIgniter\Shield\Authentication\LDAP\LDAPConnection;
+use CodeIgniter\Shield\Authentication\LDAP\LDAPDirectoryInterface;
+use CodeIgniter\Shield\Authentication\LDAP\LDAPUserResolver;
+use CodeIgniter\Shield\Config\AuthLDAP;
 use CodeIgniter\Shield\Entities\User;
-use CodeIgniter\Shield\Exceptions\LdapException;
+use CodeIgniter\Shield\Exceptions\LDAPException;
 use CodeIgniter\Shield\Tests\DatabaseTestCase;
 use CodeIgniter\Shield\Tests\FakeUser;
 use CodeIgniter\Test\FeatureTestTrait;
@@ -32,16 +32,16 @@ use PHPUnit\Framework\MockObject\MockObject;
 /**
  * @internal
  */
-final class LdapLoginTest extends DatabaseTestCase
+final class LDAPLoginTest extends DatabaseTestCase
 {
     use FakeUser;
     use FeatureTestTrait;
 
-    private AuthLdap $ldap;
-    private LdapDirectoryInterface&MockObject $directory;
+    private AuthLDAP $ldap;
+    private LDAPDirectoryInterface&MockObject $directory;
 
     /**
-     * @var array<string, LdapConnection>
+     * @var array<string, LDAPConnection>
      */
     private array $connections = [];
 
@@ -50,7 +50,7 @@ final class LdapLoginTest extends DatabaseTestCase
         parent::setUp();
 
         $auth                                    = config('Auth');
-        $auth->authenticators['session']         = Ldap::class;
+        $auth->authenticators['session']         = LDAP::class;
         $auth->validFields                       = ['username'];
         $auth->sessionConfig['allowRemembering'] = false;
         setting('Validation.login', [
@@ -58,13 +58,13 @@ final class LdapLoginTest extends DatabaseTestCase
             'password' => ['label' => 'Auth.password', 'rules' => ['required', 'max_length[4096]']],
         ]);
 
-        $config = $this->createPartialMock(AuthLdap::class, ['connections']);
+        $config = $this->createPartialMock(AuthLDAP::class, ['connections']);
         $config->method('connections')->willReturnCallback(fn (): array => $this->connections);
 
         $this->ldap                    = $config;
         $this->ldap->enabled           = true;
         $this->ldap->defaultConnection = 'example';
-        $this->connections['example']  = new LdapConnection(
+        $this->connections['example']  = new LDAPConnection(
             id: 'example',
             hosts: ['ldap.example.com'],
             baseDn: 'dc=example,dc=com',
@@ -73,9 +73,9 @@ final class LdapLoginTest extends DatabaseTestCase
             profileAttributes: ['username' => 'uid'],
             provisionUsers: true,
         );
-        Factories::injectMock('config', 'AuthLdap', $this->ldap);
+        Factories::injectMock('config', 'AuthLDAP', $this->ldap);
 
-        $this->directory = $this->createMock(LdapDirectoryInterface::class);
+        $this->directory = $this->createMock(LDAPDirectoryInterface::class);
         Services::injectMock('ldapDirectory', $this->directory);
 
         $routes = service('routes');
@@ -116,7 +116,7 @@ final class LdapLoginTest extends DatabaseTestCase
         config('Auth')->actions['login'] = Email2FA::class;
         $this->user->createEmailIdentity(['email' => 'safe-contact@example.com', 'password' => 'local-password']);
         $this->user->addGroup('admin');
-        (new LdapUserResolver(auth()->getProvider()))->link('example', 'stable-id', $this->user->id);
+        (new LDAPUserResolver(auth()->getProvider()))->link('example', 'stable-id', $this->user->id);
         $this->directory->expects($this->once())->method('authenticate')->willReturn($this->entry($this->user->username));
 
         $response = $this->post('/login', ['username' => $this->user->username, 'password' => 'directory-secret', 'remember' => '1']);
@@ -124,13 +124,13 @@ final class LdapLoginTest extends DatabaseTestCase
         $response->assertStatus(302);
         $this->assertSame(site_url('auth/a/show'), $response->getRedirectUrl());
         $authenticator = auth('session')->getAuthenticator();
-        $this->assertInstanceOf(Ldap::class, $authenticator);
+        $this->assertInstanceOf(LDAP::class, $authenticator);
         $this->assertTrue($authenticator->isPending());
         $this->assertFalse(auth('session')->loggedIn());
         $this->assertTrue($authenticator->getPendingUser()->inGroup('admin'));
         $this->seeInDatabase($this->tables['identities'], [
             'user_id'      => $this->user->id,
-            'type'         => Ldap::ID_TYPE_EMAIL_PASSWORD,
+            'type'         => LDAP::ID_TYPE_EMAIL_PASSWORD,
             'last_used_at' => null,
         ]);
         $this->dontSeeInDatabase($this->tables['remember_tokens'], ['user_id' => $this->user->id]);
@@ -153,7 +153,7 @@ final class LdapLoginTest extends DatabaseTestCase
     public function testDirectoryFailureNeverFallsBackOrFlashesPassword(string $reason): void
     {
         $this->user->createEmailIdentity(['email' => 'operator@example.com', 'password' => 'local-password']);
-        $this->directory->expects($this->once())->method('authenticate')->willThrowException(new LdapException($reason));
+        $this->directory->expects($this->once())->method('authenticate')->willThrowException(new LDAPException($reason));
 
         $response = $this->post('/login', ['username' => $this->user->username, 'password' => 'local-password']);
 
@@ -202,7 +202,7 @@ final class LdapLoginTest extends DatabaseTestCase
 
     public function testUpnRoutesToNamedConnectionAndEscapesAssertionValue(): void
     {
-        $connection = new LdapConnection(
+        $connection = new LDAPConnection(
             id: 'corporate',
             hosts: ['ad.example.com'],
             baseDn: 'dc=ad,dc=example,dc=com',
@@ -220,7 +220,7 @@ final class LdapLoginTest extends DatabaseTestCase
             ['objectGUID'],
             'directory-secret',
             '(objectClass=*)',
-        )->willThrowException(new LdapException('user_not_found'));
+        )->willThrowException(new LDAPException('user_not_found'));
 
         $response = $this->post('/login', ['username' => 'a(*)@AD.EXAMPLE.COM', 'password' => 'directory-secret']);
 
@@ -229,7 +229,7 @@ final class LdapLoginTest extends DatabaseTestCase
 
     public function testDirectoryGuidResolvesTheExplicitLinkAfterLoginRename(): void
     {
-        $this->connections['example'] = new LdapConnection(
+        $this->connections['example'] = new LDAPConnection(
             id: 'example',
             hosts: ['ad.example.com'],
             baseDn: 'dc=ad,dc=example,dc=com',
@@ -238,7 +238,7 @@ final class LdapLoginTest extends DatabaseTestCase
             loginAttributes: ['userPrincipalName'],
             externalIdAttribute: 'objectGUID',
         );
-        (new LdapUserResolver(auth()->getProvider()))->link(
+        (new LDAPUserResolver(auth()->getProvider()))->link(
             'example',
             '00112233-4455-6677-8899-aabbccddeeff',
             $this->user->id,

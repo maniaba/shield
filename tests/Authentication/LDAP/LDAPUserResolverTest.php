@@ -13,8 +13,8 @@ declare(strict_types=1);
 
 namespace CodeIgniter\Shield\Tests\Authentication\LDAP;
 
-use CodeIgniter\Shield\Authentication\LDAP\LdapUserResolver;
-use CodeIgniter\Shield\Exceptions\LdapException;
+use CodeIgniter\Shield\Authentication\LDAP\LDAPUserResolver;
+use CodeIgniter\Shield\Exceptions\LDAPException;
 use CodeIgniter\Shield\Models\UserIdentityModel;
 use CodeIgniter\Shield\Models\UserModel;
 use CodeIgniter\Shield\Tests\DatabaseTestCase;
@@ -24,14 +24,14 @@ use RuntimeException;
 /**
  * @internal
  */
-final class LdapUserResolverTest extends DatabaseTestCase
+final class LDAPUserResolverTest extends DatabaseTestCase
 {
     protected $refresh = true;
 
     public function testProvisioningStoresOnlyTheStableDirectoryIdentity(): void
     {
         $users    = model(UserModel::class);
-        $resolver = new LdapUserResolver($users);
+        $resolver = new LDAPUserResolver($users);
 
         $user = $resolver->resolve('corporate', 'immutable-object', ['username' => 'DirUser'], true);
 
@@ -41,7 +41,7 @@ final class LdapUserResolverTest extends DatabaseTestCase
 
         $this->seeInDatabase($this->tables['identities'], [
             'user_id' => $user->id,
-            'type'    => LdapUserResolver::ID_TYPE,
+            'type'    => LDAPUserResolver::ID_TYPE,
             'name'    => 'corporate',
             'secret'  => hash('sha256', "corporate\0immutable-object"),
             'secret2' => null,
@@ -52,7 +52,7 @@ final class LdapUserResolverTest extends DatabaseTestCase
     public function testEntryRenameChangesOnlyTheConfiguredProfile(): void
     {
         $users    = model(UserModel::class);
-        $resolver = new LdapUserResolver($users);
+        $resolver = new LDAPUserResolver($users);
         $user     = $resolver->resolve('corporate', 'immutable-object', ['username' => 'original'], true);
 
         $users->update($user->id, ['status_message' => 'Local account note']);
@@ -75,19 +75,19 @@ final class LdapUserResolverTest extends DatabaseTestCase
     public function testUsernameCollisionDoesNotLinkToLocalAccount(): void
     {
         $users    = model(UserModel::class);
-        $resolver = new LdapUserResolver($users);
+        $resolver = new LDAPUserResolver($users);
 
         $userId = $users->insert(['username' => 'Existing']);
 
         try {
             $resolver->resolve('corporate', 'immutable-object', ['username' => 'existing'], true);
             $this->fail('A colliding username was accepted.');
-        } catch (LdapException $exception) {
+        } catch (LDAPException $exception) {
             $this->assertSame('identity_conflict', $exception->reason);
         }
 
         $this->seeNumRecords(1, $this->tables['users'], ['id' => $userId]);
-        $this->dontSeeInDatabase($this->tables['identities'], ['type' => LdapUserResolver::ID_TYPE]);
+        $this->dontSeeInDatabase($this->tables['identities'], ['type' => LDAPUserResolver::ID_TYPE]);
     }
 
     public function testCustomProviderCanSynchronizeAWritableProfileColumn(): void
@@ -101,7 +101,7 @@ final class LdapUserResolverTest extends DatabaseTestCase
             'first_name' => ['type' => 'varchar', 'constraint' => 100, 'null' => true],
         ]));
 
-        $resolver = new LdapUserResolver($users);
+        $resolver = new LDAPUserResolver($users);
         $user     = $resolver->resolve('corporate', 'immutable-object', [
             'username'   => 'directory',
             'first_name' => 'Initial',
@@ -115,7 +115,7 @@ final class LdapUserResolverTest extends DatabaseTestCase
 
     public function testConnectionScopesExternalIdentity(): void
     {
-        $resolver = new LdapUserResolver(model(UserModel::class));
+        $resolver = new LDAPUserResolver(model(UserModel::class));
 
         $corporate = $resolver->resolve('corporate', 'shared-id', ['username' => 'corporate.user'], true);
         $partner   = $resolver->resolve('partner', 'shared-id', ['username' => 'partner.user'], true);
@@ -128,7 +128,7 @@ final class LdapUserResolverTest extends DatabaseTestCase
     public function testExplicitLinkIsIdempotentAndPreservesTheLocalPassword(): void
     {
         $users    = model(UserModel::class);
-        $resolver = new LdapUserResolver($users);
+        $resolver = new LDAPUserResolver($users);
 
         $userId = $users->insert($users->createNewUser([
             'username' => 'existing',
@@ -147,21 +147,21 @@ final class LdapUserResolverTest extends DatabaseTestCase
         $this->assertTrue(password_verify('local-password', $resolved->password_hash));
         $this->seeNumRecords(1, $this->tables['identities'], [
             'user_id' => $userId,
-            'type'    => LdapUserResolver::ID_TYPE,
+            'type'    => LDAPUserResolver::ID_TYPE,
         ]);
     }
 
     public function testCannotMoveAnExistingDirectoryIdentityToAnotherUser(): void
     {
         $users    = model(UserModel::class);
-        $resolver = new LdapUserResolver($users);
+        $resolver = new LDAPUserResolver($users);
         $user     = $resolver->resolve('corporate', 'immutable-object', ['username' => 'directory'], true);
         $otherId  = $users->insert(['username' => 'another']);
 
         try {
             $resolver->link('corporate', 'immutable-object', $otherId);
             $this->fail('A linked identity was reassigned.');
-        } catch (LdapException $exception) {
+        } catch (LDAPException $exception) {
             $this->assertSame('identity_conflict', $exception->reason);
         }
 
@@ -170,9 +170,9 @@ final class LdapUserResolverTest extends DatabaseTestCase
 
     public function testUnlinkedUserIsRejectedWhenProvisioningIsOff(): void
     {
-        $resolver = new LdapUserResolver(model(UserModel::class));
+        $resolver = new LDAPUserResolver(model(UserModel::class));
 
-        $this->expectException(LdapException::class);
+        $this->expectException(LDAPException::class);
         $this->expectExceptionMessage('user_not_provisioned');
 
         $resolver->resolve('corporate', 'immutable-object', ['username' => 'directory']);
@@ -182,12 +182,12 @@ final class LdapUserResolverTest extends DatabaseTestCase
     {
         $identities = $this->getMockBuilder(UserIdentityModel::class)->onlyMethods(['create'])->getMock();
         $identities->expects($this->once())->method('create')->willThrowException(new RuntimeException('private data'));
-        $resolver = new LdapUserResolver(model(UserModel::class), $identities);
+        $resolver = new LDAPUserResolver(model(UserModel::class), $identities);
 
         try {
             $resolver->resolve('corporate', 'immutable-object', ['username' => 'rolledback'], true);
             $this->fail('Provisioning succeeded without recording an identity.');
-        } catch (LdapException $exception) {
+        } catch (LDAPException $exception) {
             $this->assertSame('synchronization_conflict', $exception->reason);
             $this->assertNull($exception->getPrevious());
             $this->assertStringNotContainsString('private data', $exception->getMessage());
@@ -206,28 +206,28 @@ final class LdapUserResolverTest extends DatabaseTestCase
             $identities->create($identity);
         });
 
-        $resolver = new LdapUserResolver($users, $failed);
+        $resolver = new LDAPUserResolver($users, $failed);
 
         try {
             $resolver->resolve('corporate', 'immutable-object', ['username' => 'rolledback'], true);
             $this->fail('A duplicate LDAP identity was stored.');
-        } catch (LdapException $exception) {
+        } catch (LDAPException $exception) {
             $this->assertSame('synchronization_conflict', $exception->reason);
         }
 
         $this->dontSeeInDatabase($this->tables['users'], ['username' => 'rolledback']);
         $this->assertTrue($users->builder()->db()->transStrict);
 
-        $resolved = (new LdapUserResolver($users))->resolve('corporate', 'immutable-object', ['username' => 'retried'], true);
+        $resolved = (new LDAPUserResolver($users))->resolve('corporate', 'immutable-object', ['username' => 'retried'], true);
 
         $this->assertSame('retried', $resolved->username);
     }
 
     public function testProfileCannotOverwriteLocalEmailOrPassword(): void
     {
-        $resolver = new LdapUserResolver(model(UserModel::class));
+        $resolver = new LDAPUserResolver(model(UserModel::class));
 
-        $this->expectException(LdapException::class);
+        $this->expectException(LDAPException::class);
         $this->expectExceptionMessage('invalid_profile');
 
         $resolver->resolve('corporate', 'immutable-object', [
@@ -238,7 +238,7 @@ final class LdapUserResolverTest extends DatabaseTestCase
 
     public function testUnwritableProfileFieldRollsBackProvisioning(): void
     {
-        $resolver = new LdapUserResolver(model(UserModel::class));
+        $resolver = new LDAPUserResolver(model(UserModel::class));
 
         try {
             $resolver->resolve('corporate', 'immutable-object', [
@@ -246,7 +246,7 @@ final class LdapUserResolverTest extends DatabaseTestCase
                 'first_name' => 'First',
             ], true);
             $this->fail('The unmapped profile field was silently ignored.');
-        } catch (LdapException $exception) {
+        } catch (LDAPException $exception) {
             $this->assertSame('invalid_profile', $exception->reason);
         }
 
@@ -256,7 +256,7 @@ final class LdapUserResolverTest extends DatabaseTestCase
     public function testProvisioningDoesNotJoinAnExistingTransaction(): void
     {
         $users    = model(UserModel::class);
-        $resolver = new LdapUserResolver($users);
+        $resolver = new LDAPUserResolver($users);
         $database = $users->builder()->db();
 
         $this->assertTrue($database->transBegin());
@@ -264,7 +264,7 @@ final class LdapUserResolverTest extends DatabaseTestCase
         try {
             $resolver->resolve('corporate', 'immutable-object', ['username' => 'directory'], true);
             $this->fail('The resolver joined the active transaction.');
-        } catch (LdapException $exception) {
+        } catch (LDAPException $exception) {
             $this->assertSame('synchronization_conflict', $exception->reason);
         } finally {
             $this->assertTrue($database->transRollback());
@@ -277,6 +277,6 @@ final class LdapUserResolverTest extends DatabaseTestCase
     {
         $bytes = hex2bin('785634123412cdab891023456789abcd');
 
-        $this->assertSame('12345678-1234-abcd-8910-23456789abcd', LdapUserResolver::normalizeObjectGuid($bytes));
+        $this->assertSame('12345678-1234-abcd-8910-23456789abcd', LDAPUserResolver::normalizeObjectGuid($bytes));
     }
 }
