@@ -13,7 +13,11 @@ declare(strict_types=1);
 
 namespace CodeIgniter\Shield\Tests\Authentication\LDAP;
 
+use CodeIgniter\Config\Factories;
 use CodeIgniter\Shield\Authentication\LDAP\LDAPUserResolver;
+use CodeIgniter\Shield\Config\Auth;
+use CodeIgniter\Shield\Database\Migrations\CreateAuthTables;
+use CodeIgniter\Shield\Entities\UserIdentity;
 use CodeIgniter\Shield\Exceptions\LDAPException;
 use CodeIgniter\Shield\Models\UserIdentityModel;
 use CodeIgniter\Shield\Models\UserModel;
@@ -221,6 +225,88 @@ final class LDAPUserResolverTest extends DatabaseTestCase
         $resolved = (new LDAPUserResolver($users))->resolve('corporate', 'immutable-object', ['username' => 'retried'], true);
 
         $this->assertSame('retried', $resolved->username);
+    }
+
+    public function testConcurrentProvisioningKeepsOneUserAndDirectoryIdentity(): void
+    {
+        if (! extension_loaded('sqlite3')) {
+            $this->markTestSkipped('The setup for overlapping transactions requires SQLite3.');
+        }
+
+        $file = tmpfile();
+        $this->assertIsResource($file);
+
+        $original = config(Database::class);
+        $config   = new class () extends Database {
+            /**
+             * @var array<string, mixed>
+             */
+            public array $ldapProvisioningFirst = [];
+
+            /**
+             * @var array<string, mixed>
+             */
+            public array $ldapProvisioningSecond = [];
+        };
+        $config->ldapProvisioningFirst = $config->ldapProvisioningSecond = [
+            'DBDriver' => 'SQLite3',
+            'database' => stream_get_meta_data($file)['uri'],
+            'DBDebug'  => false,
+        ];
+
+        Factories::injectMock('config', Database::class, $config);
+
+        $auth          = config(Auth::class);
+        $originalGroup = $auth->DBGroup;
+        $first         = Database::connect('ldapProvisioningFirst');
+        $second        = Database::connect('ldapProvisioningSecond');
+
+        try {
+            $mode = $first->query('PRAGMA journal_mode = WAL');
+            $this->assertNotFalse($mode);
+            $this->assertSame('wal', $mode->getRowArray()['journal_mode']);
+
+            $auth->DBGroup = 'ldapProvisioningFirst';
+            (new CreateAuthTables())->up();
+            $users       = new UserModel();
+            $identities  = new UserIdentityModel();
+            $firstLookup = $this->getMockBuilder(UserIdentityModel::class)->onlyMethods(['getIdentityBySecret'])->getMock();
+
+            $auth->DBGroup = 'ldapProvisioningSecond';
+            $concurrent    = new LDAPUserResolver(new UserModel(), new UserIdentityModel());
+            $profile       = ['username' => 'directory.user'];
+            $winner        = null;
+
+            $firstLookup->expects($this->once())->method('getIdentityBySecret')->willReturnCallback(
+                static function (string $type, ?string $secret) use ($identities, $concurrent, $profile, &$winner): ?UserIdentity {
+                    // The first transaction's snapshot contains no link. Commit the
+                    // competing login before the first transaction tries its write.
+                    $identity = $identities->getIdentityBySecret($type, $secret);
+                    $winner   = $concurrent->resolve('corporate', 'immutable-object', $profile, true);
+
+                    return $identity;
+                },
+            );
+
+            try {
+                (new LDAPUserResolver($users, $firstLookup))->resolve('corporate', 'immutable-object', $profile, true);
+                $this->fail('Both concurrent attempts provisioned the same directory identity.');
+            } catch (LDAPException $exception) {
+                $this->assertSame('synchronization_conflict', $exception->reason);
+            }
+
+            $this->assertNotNull($winner);
+            $retried = (new LDAPUserResolver($users, $identities))->resolve('corporate', 'immutable-object', $profile, true);
+            $this->assertSame($winner->id, $retried->id);
+            $this->assertSame(1, $first->table($this->tables['users'])->countAllResults());
+            $this->assertSame(1, $first->table($this->tables['identities'])->countAllResults());
+        } finally {
+            $auth->DBGroup = $originalGroup;
+            Factories::injectMock('config', Database::class, $original);
+            $first->close();
+            $second->close();
+            fclose($file);
+        }
     }
 
     public function testProfileCannotOverwriteLocalEmailOrPassword(): void
