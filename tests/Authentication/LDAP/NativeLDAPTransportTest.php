@@ -20,7 +20,6 @@ use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Attributes\PreserveGlobalState;
 use PHPUnit\Framework\Attributes\RunTestsInSeparateProcesses;
 use PHPUnit\Framework\TestCase;
-use SensitiveParameterValue;
 use Tests\Support\LDAP\NativeLDAPStub;
 
 /**
@@ -220,8 +219,8 @@ final class NativeLDAPTransportTest extends TestCase
             $arguments = array_column($frames, 'args', 'function');
 
             $this->assertSame('service_bind_failed', $exception->reason);
-            $this->assertInstanceOf(SensitiveParameterValue::class, $arguments['authenticate'][4]);
-            $this->assertInstanceOf(SensitiveParameterValue::class, $arguments['bind'][2]);
+            $this->assertSame('SensitiveParameterValue', get_debug_type($arguments['authenticate'][4]));
+            $this->assertSame('SensitiveParameterValue', get_debug_type($arguments['bind'][2]));
         }
     }
 

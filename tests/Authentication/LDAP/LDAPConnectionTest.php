@@ -131,7 +131,7 @@ final class LDAPConnectionTest extends TestCase
             ['ldap.example.test'],
             'dc=example,dc=test',
             'cn=reader,dc=example,dc=test',
-            static fn (): string => throw new RuntimeException('private data from secret store'),
+            static fn (): never => throw new RuntimeException('private data from secret store'),
         );
 
         try {
