@@ -31,10 +31,14 @@
                 <form action="<?= url_to('login') ?>" method="post">
                     <?= csrf_field() ?>
 
-                    <!-- Email -->
                     <div class="form-floating mb-3">
-                        <input type="email" class="form-control" id="floatingEmailInput" name="email" inputmode="email" autocomplete="email" placeholder="<?= lang('Auth.email') ?>" value="<?= old('email') ?>" required>
-                        <label for="floatingEmailInput"><?= lang('Auth.email') ?></label>
+                        <?php if ($ldapLogin ?? false): ?>
+                            <input type="text" class="form-control" id="floatingUsernameInput" name="username" autocomplete="username" placeholder="<?= lang('Auth.username') ?>" required>
+                            <label for="floatingUsernameInput"><?= lang('Auth.username') ?></label>
+                        <?php else: ?>
+                            <input type="email" class="form-control" id="floatingEmailInput" name="email" inputmode="email" autocomplete="email" placeholder="<?= lang('Auth.email') ?>" value="<?= old('email') ?>" required>
+                            <label for="floatingEmailInput"><?= lang('Auth.email') ?></label>
+                        <?php endif ?>
                     </div>
 
                     <!-- Password -->
@@ -44,7 +48,7 @@
                     </div>
 
                     <!-- Remember me -->
-                    <?php if (setting('Auth.sessionConfig')['allowRemembering']): ?>
+                    <?php if (! ($ldapLogin ?? false) && setting('Auth.sessionConfig')['allowRemembering']): ?>
                         <div class="form-check">
                             <label class="form-check-label">
                                 <input type="checkbox" name="remember" class="form-check-input" <?php if (old('remember')): ?> checked<?php endif ?>>

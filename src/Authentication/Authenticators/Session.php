@@ -35,6 +35,7 @@ use CodeIgniter\Shield\Models\UserModel;
 use CodeIgniter\Shield\Result;
 use Config\Security;
 use Config\Services;
+use SensitiveParameter;
 use stdClass;
 
 class Session implements AuthenticatorInterface
@@ -126,7 +127,7 @@ class Session implements AuthenticatorInterface
      *
      * @param array{email?: string, username?: string, password?: string, ...<string, string>} $credentials
      */
-    public function attempt(array $credentials): Result
+    public function attempt(#[SensitiveParameter] array $credentials): Result
     {
         /** @var IncomingRequest $request */
         $request = service('request');
@@ -135,6 +136,7 @@ class Session implements AuthenticatorInterface
         $userAgent = (string) $request->getUserAgent();
 
         $result = $this->check($credentials);
+        unset($credentials['password']);
 
         // Credentials mismatch.
         if (! $result->isOK()) {
@@ -145,7 +147,6 @@ class Session implements AuthenticatorInterface
 
             // Fire an event on failure so devs have the chance to
             // let them know someone attempted to login to their account
-            unset($credentials['password']);
             Events::trigger('failedLogin', $credentials);
 
             return $result;
@@ -165,8 +166,7 @@ class Session implements AuthenticatorInterface
 
         $this->user = $user;
 
-        // Update the user's last used date on their password identity.
-        $user->touchIdentity($user->getEmailIdentity());
+        $this->touchLoginIdentity($user, $credentials);
 
         // Set auth action from database.
         $this->setAuthAction();
@@ -185,6 +185,18 @@ class Session implements AuthenticatorInterface
         }
 
         return $result;
+    }
+
+    /**
+     * @param array<string, string> $credentials
+     */
+    protected function touchLoginIdentity(User $user, array $credentials): void
+    {
+        $identity = $user->getEmailIdentity();
+
+        if ($identity !== null) {
+            $user->touchIdentity($identity);
+        }
     }
 
     /**
@@ -347,7 +359,7 @@ class Session implements AuthenticatorInterface
      *
      * @param array{email?: string, username?: string, password?: string, ...<string, string>} $credentials
      */
-    public function check(array $credentials): Result
+    public function check(#[SensitiveParameter] array $credentials): Result
     {
         // Can't validate without a password.
         if (($credentials['password'] ?? '') === '' || count($credentials) < 2) {
@@ -368,7 +380,9 @@ class Session implements AuthenticatorInterface
         /** @var Passwords $passwords */
         $passwords = service('passwords');
 
-        if ($user === null) {
+        $hash = $user?->password_hash;
+
+        if ($user === null || $hash === null || $hash === '') {
             // Verify against a fixed hash so an unknown identifier still does
             // the expensive password check. The result is never accepted.
             $passwords->verify($givenPassword, config('Auth')->dummyPasswordHash);
@@ -380,7 +394,7 @@ class Session implements AuthenticatorInterface
         }
 
         // Now, try matching the passwords.
-        if (! $passwords->verify($givenPassword, $user->password_hash)) {
+        if (! $passwords->verify($givenPassword, $hash)) {
             return new Result([
                 'success' => false,
                 'reason'  => lang('Auth.badAttempt'),
@@ -391,7 +405,7 @@ class Session implements AuthenticatorInterface
         // This would be due to the hash algorithm or hash
         // cost changing since the last time that a user
         // logged in.
-        if ($passwords->needsRehash($user->password_hash)) {
+        if ($passwords->needsRehash($hash)) {
             $user->password_hash = $passwords->hash($givenPassword);
             $this->provider->save($user);
         }
