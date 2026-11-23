@@ -11,14 +11,12 @@ declare(strict_types=1);
  * the LICENSE file that was distributed with this source code.
  */
 
-namespace CodeIgniter\Shield\Authentication\LDAP;
-
-use RuntimeException;
+namespace CodeIgniter\Shield\Exceptions;
 
 final class LdapException extends RuntimeException
 {
     public function __construct(public readonly string $reason)
     {
-        parent::__construct('LDAP operation failed (' . $reason . ').');
+        parent::__construct(lang('Auth.ldapOperationFailed', [$reason]));
     }
 }

@@ -13,6 +13,8 @@ declare(strict_types=1);
 
 namespace CodeIgniter\Shield\Authentication\LDAP;
 
+use CodeIgniter\Shield\Exceptions\LdapException;
+
 final class LdapFilter
 {
     private const IDENTIFIER = '(?:[a-zA-Z][a-zA-Z0-9-]*|(?:0|[1-9][0-9]*)(?:\.(?:0|[1-9][0-9]*))+)';

@@ -14,14 +14,13 @@ declare(strict_types=1);
 namespace CodeIgniter\Shield\Authentication\Authenticators;
 
 use CodeIgniter\Shield\Authentication\LDAP\LdapDirectoryInterface;
-use CodeIgniter\Shield\Authentication\LDAP\LdapException;
 use CodeIgniter\Shield\Authentication\LDAP\LdapFilter;
 use CodeIgniter\Shield\Authentication\LDAP\LdapUserResolver;
 use CodeIgniter\Shield\Config\AuthLdap;
 use CodeIgniter\Shield\Entities\User;
+use CodeIgniter\Shield\Exceptions\LdapException;
 use CodeIgniter\Shield\Models\UserModel;
 use CodeIgniter\Shield\Result;
-use SensitiveParameter;
 
 class Ldap extends Session
 {
@@ -45,7 +44,7 @@ class Ldap extends Session
     /**
      * @param array<array-key, mixed> $credentials
      */
-    public function attempt(#[SensitiveParameter] array $credentials): Result
+    public function attempt(array $credentials): Result
     {
         $identifier = $credentials['username'] ?? '';
         $password   = $credentials['password'] ?? '';
@@ -64,7 +63,7 @@ class Ldap extends Session
     /**
      * @param array<array-key, mixed> $credentials
      */
-    public function check(#[SensitiveParameter] array $credentials): Result
+    public function check(array $credentials): Result
     {
         $identifier = $credentials['username'] ?? '';
         $password   = $credentials['password'] ?? '';
@@ -105,7 +104,7 @@ class Ldap extends Session
         }
     }
 
-    private function resolveUser(string $identifier, #[SensitiveParameter] string $password): User
+    private function resolveUser(string $identifier, string $password): User
     {
         $separator    = strrpos($identifier, '@');
         $domain       = $separator === false ? '' : strtolower(substr($identifier, $separator + 1));
@@ -165,7 +164,7 @@ class Ldap extends Session
     /**
      * @param int|string $expectedId
      */
-    private function checkLocalAccount(string $identifier, #[SensitiveParameter] string $password, $expectedId): Result
+    private function checkLocalAccount(string $identifier, string $password, $expectedId): Result
     {
         $result = parent::check(['username' => $identifier, 'password' => $password]);
         $user   = $result->extraInfo();

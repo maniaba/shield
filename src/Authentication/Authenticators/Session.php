@@ -35,7 +35,6 @@ use CodeIgniter\Shield\Models\UserModel;
 use CodeIgniter\Shield\Result;
 use Config\Security;
 use Config\Services;
-use SensitiveParameter;
 use stdClass;
 
 class Session implements AuthenticatorInterface
@@ -127,7 +126,7 @@ class Session implements AuthenticatorInterface
      *
      * @param array{email?: string, username?: string, password?: string, ...<string, string>} $credentials
      */
-    public function attempt(#[SensitiveParameter] array $credentials): Result
+    public function attempt(array $credentials): Result
     {
         /** @var IncomingRequest $request */
         $request = service('request');
@@ -359,7 +358,7 @@ class Session implements AuthenticatorInterface
      *
      * @param array{email?: string, username?: string, password?: string, ...<string, string>} $credentials
      */
-    public function check(#[SensitiveParameter] array $credentials): Result
+    public function check(array $credentials): Result
     {
         // Can't validate without a password.
         if (($credentials['password'] ?? '') === '' || count($credentials) < 2) {
@@ -380,11 +379,8 @@ class Session implements AuthenticatorInterface
         /** @var Passwords $passwords */
         $passwords = service('passwords');
 
-        $hash = $user?->password_hash;
-
-        if ($user === null || $hash === null || $hash === '') {
-            // Verify against a fixed hash so an unknown identifier still does
-            // the expensive password check. The result is never accepted.
+        if ($user === null || $user->password_hash === null) {
+            // Do the same password work for unknown and passwordless accounts.
             $passwords->verify($givenPassword, config('Auth')->dummyPasswordHash);
 
             return new Result([
@@ -394,7 +390,7 @@ class Session implements AuthenticatorInterface
         }
 
         // Now, try matching the passwords.
-        if (! $passwords->verify($givenPassword, $hash)) {
+        if (! $passwords->verify($givenPassword, $user->password_hash)) {
             return new Result([
                 'success' => false,
                 'reason'  => lang('Auth.badAttempt'),
@@ -405,7 +401,7 @@ class Session implements AuthenticatorInterface
         // This would be due to the hash algorithm or hash
         // cost changing since the last time that a user
         // logged in.
-        if ($passwords->needsRehash($hash)) {
+        if ($passwords->needsRehash($user->password_hash)) {
             $user->password_hash = $passwords->hash($givenPassword);
             $this->provider->save($user);
         }

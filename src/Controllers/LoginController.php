@@ -15,7 +15,6 @@ namespace CodeIgniter\Shield\Controllers;
 
 use App\Controllers\BaseController;
 use CodeIgniter\HTTP\RedirectResponse;
-use CodeIgniter\Shield\Authentication\Authenticators\Ldap;
 use CodeIgniter\Shield\Authentication\Authenticators\Session;
 use CodeIgniter\Shield\Traits\Viewable;
 use CodeIgniter\Shield\Validation\ValidationRules;
@@ -43,9 +42,7 @@ class LoginController extends BaseController
             return redirect()->route('auth-action-show');
         }
 
-        $view = setting('Auth.views')['login'];
-
-        return $authenticator instanceof Ldap ? $this->view($view, ['ldapLogin' => true]) : $this->view($view);
+        return $this->view(setting('Auth.views')['login']);
     }
 
     /**
@@ -58,7 +55,7 @@ class LoginController extends BaseController
         $rules = $this->getValidationRules();
 
         if (! $this->validateData($this->request->getPost(), $rules, [], config('Auth')->DBGroup)) {
-            return $this->withLoginInput(redirect()->back())->with('errors', $this->validator->getErrors());
+            return redirect()->back()->with('errors', $this->validator->getErrors());
         }
 
         /** @var array $credentials */
@@ -73,7 +70,7 @@ class LoginController extends BaseController
         // Attempt to login
         $result = $authenticator->remember($remember)->attempt($credentials);
         if (! $result->isOK()) {
-            return $this->withLoginInput(redirect()->route('login'))->with('error', $result->reason());
+            return redirect()->route('login')->with('error', $result->reason());
         }
 
         // If an action has been defined for login, start it up.
@@ -91,27 +88,9 @@ class LoginController extends BaseController
      */
     protected function getValidationRules(): array
     {
-        if ($this->usesLdap()) {
-            return setting('Validation.login') ?? [
-                'username' => ['label' => 'Auth.username', 'rules' => ['required', 'max_length[255]']],
-                'password' => ['label' => 'Auth.password', 'rules' => ['required', 'max_length[4096]']],
-            ];
-        }
-
         $rules = new ValidationRules();
 
         return $rules->getLoginRules();
-    }
-
-    private function usesLdap(): bool
-    {
-        return is_a(config('Auth')->authenticators['session'] ?? '', Ldap::class, true);
-    }
-
-    private function withLoginInput(RedirectResponse $response): RedirectResponse
-    {
-        // withInput() flashes the complete POST body, including the directory password.
-        return $this->usesLdap() ? $response : $response->withInput();
     }
 
     /**

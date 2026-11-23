@@ -69,6 +69,7 @@ final class LoginTest extends DatabaseTestCase
         ]);
 
         $this->assertSame(lang('Auth.badAttempt'), session('error'));
+        $result->assertSessionMissing('_ci_old_input');
     }
 
     public function testLoginTooLongPasswordDefault(): void
@@ -90,6 +91,7 @@ final class LoginTest extends DatabaseTestCase
             'errors',
             ['password' => 'Password cannot exceed 72 bytes in length.'],
         );
+        $result->assertSessionMissing('_ci_old_input');
     }
 
     public function testLoginTooLongPasswordArgon2id(): void

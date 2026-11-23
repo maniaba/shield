@@ -1,3 +1,9 @@
+<?php
+$identifier = setting('Auth.validFields') === ['username'] ? 'username' : 'email';
+$fieldId    = 'floating' . ucfirst($identifier) . 'Input';
+$inputType  = $identifier === 'email' ? 'email' : 'text';
+$label      = lang('Auth.' . $identifier);
+?>
 <?= $this->extend(config('Auth')->views['layout']) ?>
 
 <?= $this->section('title') ?><?= lang('Auth.login') ?> <?= $this->endSection() ?>
@@ -32,13 +38,8 @@
                     <?= csrf_field() ?>
 
                     <div class="form-floating mb-3">
-                        <?php if ($ldapLogin ?? false): ?>
-                            <input type="text" class="form-control" id="floatingUsernameInput" name="username" autocomplete="username" placeholder="<?= lang('Auth.username') ?>" required>
-                            <label for="floatingUsernameInput"><?= lang('Auth.username') ?></label>
-                        <?php else: ?>
-                            <input type="email" class="form-control" id="floatingEmailInput" name="email" inputmode="email" autocomplete="email" placeholder="<?= lang('Auth.email') ?>" value="<?= old('email') ?>" required>
-                            <label for="floatingEmailInput"><?= lang('Auth.email') ?></label>
-                        <?php endif ?>
+                        <input type="<?= $inputType ?>" class="form-control" id="<?= $fieldId ?>" name="<?= $identifier ?>" inputmode="<?= $inputType ?>" autocomplete="<?= $identifier ?>" placeholder="<?= $label ?>" value="<?= old($identifier) ?>" required>
+                        <label for="<?= $fieldId ?>"><?= $label ?></label>
                     </div>
 
                     <!-- Password -->
@@ -48,7 +49,7 @@
                     </div>
 
                     <!-- Remember me -->
-                    <?php if (! ($ldapLogin ?? false) && setting('Auth.sessionConfig')['allowRemembering']): ?>
+                    <?php if (setting('Auth.sessionConfig')['allowRemembering']): ?>
                         <div class="form-check">
                             <label class="form-check-label">
                                 <input type="checkbox" name="remember" class="form-check-input" <?php if (old('remember')): ?> checked<?php endif ?>>

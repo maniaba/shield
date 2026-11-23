@@ -13,8 +13,8 @@ declare(strict_types=1);
 
 namespace CodeIgniter\Shield\Tests\Authentication\LDAP;
 
-use CodeIgniter\Shield\Authentication\LDAP\LdapException;
 use CodeIgniter\Shield\Authentication\LDAP\LdapFilter;
+use CodeIgniter\Shield\Exceptions\LdapException;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 

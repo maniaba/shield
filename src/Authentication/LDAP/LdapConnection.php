@@ -14,7 +14,7 @@ declare(strict_types=1);
 namespace CodeIgniter\Shield\Authentication\LDAP;
 
 use Closure;
-use SensitiveParameter;
+use CodeIgniter\Shield\Exceptions\LdapException;
 use Throwable;
 
 final readonly class LdapConnection
@@ -35,7 +35,6 @@ final readonly class LdapConnection
         public array $hosts,
         public string $baseDn,
         public string $bindDn,
-        #[SensitiveParameter]
         Closure|string $bindPassword,
         public string $encryption = 'ldaps',
         public ?int $port = null,

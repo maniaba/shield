@@ -15,8 +15,9 @@ namespace CodeIgniter\Shield\Tests\Authentication\LDAP;
 
 use ArrayObject;
 use CodeIgniter\Shield\Authentication\LDAP\LdapConnection;
-use CodeIgniter\Shield\Authentication\LDAP\LdapException;
 use CodeIgniter\Shield\Authentication\LDAP\NativeLdapDirectory;
+use CodeIgniter\Shield\Exceptions\LdapException;
+use CodeIgniter\Shield\Exceptions\RuntimeException;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 
@@ -47,6 +48,22 @@ final class NativeLdapDirectoryTest extends TestCase
         $this->assertCount(0, $reads);
         $this->assertSame('readerPassword!', $connection->bindPassword());
         $this->assertCount(1, $reads);
+    }
+
+    public function testInvalidEndpointThrowsLocalizedShieldException(): void
+    {
+        $language = service('language');
+        $locale   = $language->getLocale();
+        $language->setLocale('sr');
+
+        $this->expectException(RuntimeException::class);
+        $this->expectExceptionMessage('LDAP operacija nije uspela (invalid_endpoint).');
+
+        try {
+            new LdapConnection('test', ['ldap://example.test'], 'dc=example,dc=test', 'cn=reader,dc=example,dc=test', 'readerPassword!');
+        } finally {
+            $language->setLocale($locale);
+        }
     }
 
     #[DataProvider('provideRejectsPasswordsBeforeContactingDirectory')]
