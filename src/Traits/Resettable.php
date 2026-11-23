@@ -31,7 +31,7 @@ trait Resettable
         $identityModel = model(UserIdentityModel::class);
         $identity      = $identityModel->getIdentityByType($this, Session::ID_TYPE_EMAIL_PASSWORD);
 
-        return $identity->force_reset;
+        return $identity->force_reset ?? false;
     }
 
     /**
