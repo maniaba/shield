@@ -17,6 +17,9 @@ use Closure;
 use CodeIgniter\Shield\Exceptions\LDAPException;
 use Throwable;
 
+/**
+ * Immutable settings for an LDAP directory, with bind credentials available on demand.
+ */
 final readonly class LDAPConnection
 {
     /**
@@ -25,10 +28,14 @@ final readonly class LDAPConnection
     private Closure $readBindPassword;
 
     /**
+     * Accept a bind credential or a lazy secret provider for the validated connection settings.
+     *
      * @param array<int, string>         $hosts
      * @param (Closure(): string)|string $bindPassword
      * @param array<int, string>         $loginAttributes
      * @param array<string, string>      $profileAttributes Local user field to LDAP attribute
+     *
+     * @throws LDAPException If the connection settings are invalid.
      */
     public function __construct(
         public string $id,
@@ -89,6 +96,11 @@ final readonly class LDAPConnection
         $this->readBindPassword = $bindPassword instanceof Closure ? $bindPassword : static fn (): string => $bindPassword;
     }
 
+    /**
+     * Read the service account credential just before binding.
+     *
+     * @throws LDAPException If the credential is unavailable or invalid.
+     */
     public function bindPassword(): string
     {
         try {
@@ -105,6 +117,9 @@ final readonly class LDAPConnection
         return $password;
     }
 
+    /**
+     * Build a URI for a configured host with the configured or protocol-default port.
+     */
     public function endpoint(string $host): string
     {
         $host = str_contains($host, ':') ? '[' . $host . ']' : $host;
@@ -115,6 +130,8 @@ final readonly class LDAPConnection
     }
 
     /**
+     * Expose diagnostic connection settings while redacting the bind credential provider.
+     *
      * @return array<string, mixed>
      */
     public function __debugInfo(): array

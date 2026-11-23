@@ -25,6 +25,9 @@ use CodeIgniter\Shield\Exceptions\LDAPException;
 use CodeIgniter\Shield\Models\UserModel;
 use CodeIgniter\Shield\Result;
 
+/**
+ * Uses verified LDAP identities with Shield's session and login action lifecycle.
+ */
 class LDAP extends Session
 {
     private readonly AuthLDAP $ldapConfig;
@@ -36,6 +39,11 @@ class LDAP extends Session
      */
     private readonly array $localAccounts;
 
+    /**
+     * Uses the application configuration and directory service unless equivalents are supplied.
+     *
+     * @throws LDAPException If reserved local identifiers collide after case normalization.
+     */
     public function __construct(
         UserModel $provider,
         ?AuthLDAP $config = null,
@@ -55,6 +63,8 @@ class LDAP extends Session
     }
 
     /**
+     * Verify credentials and begin a Shield session, subject to configured login actions.
+     *
      * @param array<array-key, mixed> $credentials
      */
     public function attempt(array $credentials): Result
@@ -101,6 +111,10 @@ class LDAP extends Session
     }
 
     /**
+     * Verify credentials and resolve the user for a subsequent session login.
+     *
+     * A successful directory check may provision or update the local user.
+     *
      * @param array<array-key, mixed> $credentials
      */
     public function check(array $credentials): Result

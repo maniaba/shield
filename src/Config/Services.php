@@ -62,6 +62,9 @@ class Services extends BaseService
         return new JWTManager();
     }
 
+    /**
+     * Supplies the directory transport used for LDAP sign-in and diagnostics.
+     */
     public static function ldapDirectory(bool $getShared = true): LDAPDirectoryInterface
     {
         if ($getShared) {

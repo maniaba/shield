@@ -13,15 +13,24 @@ declare(strict_types=1);
 
 namespace CodeIgniter\Shield\Authentication\LDAP;
 
+use CodeIgniter\Shield\Exceptions\LDAPException;
+
+/**
+ * Directory operations used for LDAP sign-in and application diagnostics.
+ */
 interface LDAPDirectoryInterface
 {
     /**
      * Check that the configured endpoint can establish and verify TLS.
+     *
+     * @throws LDAPException If no configured endpoint completes the TLS check.
      */
     public function testConnection(LDAPConnection $connection): void;
 
     /**
      * Check that an endpoint accepts the configured service account.
+     *
+     * @throws LDAPException If the service bind fails.
      */
     public function testBind(LDAPConnection $connection): void;
 
@@ -31,6 +40,8 @@ interface LDAPDirectoryInterface
      * @param list<string> $attributes
      *
      * @return array{dn: string, attributes: array<string, list<string>>} Attribute names are lowercase.
+     *
+     * @throws LDAPException If the directory cannot verify one eligible user.
      */
     public function authenticate(
         LDAPConnection $connection,
@@ -47,6 +58,8 @@ interface LDAPDirectoryInterface
      * @param list<string> $attributes
      *
      * @return list<array{dn: string, attributes: array<string, list<string>>}> Attribute names are lowercase.
+     *
+     * @throws LDAPException If the search fails or its inputs are invalid.
      */
     public function preview(
         LDAPConnection $connection,

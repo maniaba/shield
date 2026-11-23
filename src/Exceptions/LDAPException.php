@@ -13,8 +13,14 @@ declare(strict_types=1);
 
 namespace CodeIgniter\Shield\Exceptions;
 
+/**
+ * Reports LDAP failures using sanitized diagnostic reason codes.
+ */
 final class LDAPException extends RuntimeException
 {
+    /**
+     * Localizes the message for the supplied diagnostic reason code.
+     */
     public function __construct(public readonly string $reason)
     {
         parent::__construct(lang('Auth.ldapOperationFailed', [$reason]));

@@ -18,6 +18,8 @@ use LDAP\Connection;
 use SensitiveParameter;
 
 /**
+ * Implements directory operations with PHP's LDAP extension and verified TLS.
+ *
  * @phpstan-type DirectoryEntry array{dn: string, attributes: array<string, list<string>>}
  */
 final class NativeLDAPDirectory implements LDAPDirectoryInterface
@@ -36,18 +38,31 @@ final class NativeLDAPDirectory implements LDAPDirectoryInterface
     private const FILTER_ERROR  = -7;
     private const CONNECT_ERROR = -11;
 
+    /**
+     * {@inheritDoc}
+     *
+     * For LDAPS, an anonymous Root DSE lookup triggers the TLS handshake.
+     */
     public function testConnection(LDAPConnection $connection): void
     {
         $ldap = $this->open($connection, false);
         ldap_unbind($ldap);
     }
 
+    /**
+     * {@inheritDoc}
+     */
     public function testBind(LDAPConnection $connection): void
     {
         $ldap = $this->open($connection, true);
         ldap_unbind($ldap);
     }
 
+    /**
+     * {@inheritDoc}
+     *
+     * Rechecks the immutable identity on the same endpoint after the user bind.
+     */
     public function authenticate(
         LDAPConnection $connection,
         string $baseDn,
@@ -96,6 +111,11 @@ final class NativeLDAPDirectory implements LDAPDirectoryInterface
         }
     }
 
+    /**
+     * {@inheritDoc}
+     *
+     * Accepts a limit of one to 100 entries.
+     */
     public function preview(
         LDAPConnection $connection,
         string $baseDn,

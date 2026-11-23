@@ -30,6 +30,9 @@ final readonly class LDAPUserResolver
 
     private UserIdentityModel $identities;
 
+    /**
+     * Uses the standard identity model unless the caller supplies one.
+     */
     public function __construct(private UserModel $users, ?UserIdentityModel $identities = null)
     {
         $this->identities = $identities ?? model(UserIdentityModel::class);

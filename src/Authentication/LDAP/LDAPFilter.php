@@ -15,11 +15,17 @@ namespace CodeIgniter\Shield\Authentication\LDAP;
 
 use CodeIgniter\Shield\Exceptions\LDAPException;
 
+/**
+ * Builds and validates LDAP filters, including safe encoding of assertion values.
+ */
 final class LDAPFilter
 {
     private const IDENTIFIER = '(?:[a-zA-Z][a-zA-Z0-9-]*|(?:0|[1-9][0-9]*)(?:\.(?:0|[1-9][0-9]*))+)';
     private const ATTRIBUTE  = self::IDENTIFIER . '(?:;[a-zA-Z0-9-]+)*';
 
+    /**
+     * Match a literal attribute value, escaping wildcard characters as data.
+     */
     public static function equal(string $attribute, string $value): string
     {
         self::validateAttribute($attribute);
@@ -27,16 +33,25 @@ final class LDAPFilter
         return '(' . $attribute . '=' . self::escapeValue($value) . ')';
     }
 
+    /**
+     * Combine one or more validated filters with LDAP's AND operator.
+     */
     public static function all(string ...$filters): string
     {
         return self::combine('&', $filters);
     }
 
+    /**
+     * Combine one or more validated filters with LDAP's OR operator.
+     */
     public static function any(string ...$filters): string
     {
         return self::combine('|', $filters);
     }
 
+    /**
+     * Negate a complete, validated LDAP filter.
+     */
     public static function not(string $filter): string
     {
         self::validate($filter);
@@ -44,18 +59,29 @@ final class LDAPFilter
         return '(!' . $filter . ')';
     }
 
+    /**
+     * Encode assertion value bytes for interpolation into an LDAP filter per RFC 4515.
+     */
     public static function escapeValue(string $value): string
     {
         return preg_replace_callback('/[\x00-\x1f\x7f-\xff()*\x5c]/', self::hexEscape(...), $value)
             ?? throw new LDAPException('invalid_filter_value');
     }
 
+    /**
+     * Encode a single naming attribute value in a distinguished name per RFC 4514.
+     */
     public static function escapeDnComponent(string $value): string
     {
         return preg_replace_callback('/(^[ #]| $|[\x00-\x1f\x7f-\xff"+,;<>=\x5c])/', self::hexEscape(...), $value)
             ?? throw new LDAPException('invalid_dn_component');
     }
 
+    /**
+     * Check the syntax and length of an LDAP attribute description.
+     *
+     * @throws LDAPException If the attribute description is invalid.
+     */
     public static function validateAttribute(string $attribute): void
     {
         if (strlen($attribute) > 128 || preg_match('/\A' . self::ATTRIBUTE . '\z/', $attribute) !== 1) {
@@ -63,6 +89,11 @@ final class LDAPFilter
         }
     }
 
+    /**
+     * Check the syntax, length, and nesting depth of a complete filter.
+     *
+     * @throws LDAPException If the filter is invalid or exceeds the parser limits.
+     */
     public static function validate(string $filter): void
     {
         if (strlen($filter) > 16384 || preg_match('//u', $filter) !== 1 || self::parse($filter, 0, 0) !== strlen($filter)) {
