@@ -16,6 +16,7 @@ namespace CodeIgniter\Shield\Authentication\LDAP;
 use Closure;
 use CodeIgniter\Database\BaseConnection;
 use CodeIgniter\Shield\Entities\User;
+use CodeIgniter\Shield\Exceptions\LdapException;
 use CodeIgniter\Shield\Models\UserIdentityModel;
 use CodeIgniter\Shield\Models\UserModel;
 use Throwable;

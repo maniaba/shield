@@ -15,7 +15,7 @@ namespace CodeIgniter\Shield\Config;
 
 use CodeIgniter\Config\BaseConfig;
 use CodeIgniter\Shield\Authentication\LDAP\LdapConnection;
-use CodeIgniter\Shield\Authentication\LDAP\LdapException;
+use CodeIgniter\Shield\Exceptions\LdapException;
 
 class AuthLdap extends BaseConfig
 {

@@ -142,8 +142,18 @@ $this->allowMagicLinkLogins = false;
 $this->sessionConfig['allowRemembering'] = false;
 ```
 
-Register the normal Shield routes. An LDAP-only application can omit the public
-registration and magic-link routes in **app/Config/Routes.php**:
+Add the login rules in **app/Config/Validation.php**. A text username field
+allows both simple identifiers and UPNs. [Customizing login rules](../customization/validation_rules.md#login)
+
+```php
+public array $login = [
+    'username' => ['label' => 'Auth.username', 'rules' => ['required', 'max_length[255]']],
+    'password' => ['label' => 'Auth.password', 'rules' => ['required', 'max_length[4096]']],
+];
+```
+
+Register Shield's usual routes in **app/Config/Routes.php**. This LDAP-only
+example omits public registration and magic-link routes:
 
 ```php
 service('auth')->routes($routes, ['except' => ['register', 'magic-link']]);
@@ -278,8 +288,8 @@ CSRF protection, and rate limits. Request only the attributes an operator needs,
 and keep raw results out of ordinary application logs.
 
 ```php
-use CodeIgniter\Shield\Authentication\LDAP\LdapException;
 use CodeIgniter\Shield\Authentication\LDAP\LdapFilter;
+use CodeIgniter\Shield\Exceptions\LdapException;
 
 $config = config('AuthLdap');
 $connectionIds = $config->connectionIds();

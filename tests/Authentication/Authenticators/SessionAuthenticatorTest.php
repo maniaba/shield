@@ -303,6 +303,17 @@ final class SessionAuthenticatorTest extends DatabaseTestCase
         $this->assertSame(lang('Auth.badAttempt'), $result->reason());
     }
 
+    public function testCheckRejectsUserWithoutLocalPassword(): void
+    {
+        $result = $this->auth->check([
+            'username' => $this->user->username,
+            'password' => 'secret',
+        ]);
+
+        $this->assertFalse($result->isOK());
+        $this->assertSame(lang('Auth.badAttempt'), $result->reason());
+    }
+
     public function testCheckUnknownUserStillVerifiesPassword(): void
     {
         $passwords = new class (new Auth()) extends Passwords {

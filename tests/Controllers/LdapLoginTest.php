@@ -18,10 +18,10 @@ use CodeIgniter\Shield\Authentication\Actions\Email2FA;
 use CodeIgniter\Shield\Authentication\Authenticators\Ldap;
 use CodeIgniter\Shield\Authentication\LDAP\LdapConnection;
 use CodeIgniter\Shield\Authentication\LDAP\LdapDirectoryInterface;
-use CodeIgniter\Shield\Authentication\LDAP\LdapException;
 use CodeIgniter\Shield\Authentication\LDAP\LdapUserResolver;
 use CodeIgniter\Shield\Config\AuthLdap;
 use CodeIgniter\Shield\Entities\User;
+use CodeIgniter\Shield\Exceptions\LdapException;
 use CodeIgniter\Shield\Tests\DatabaseTestCase;
 use CodeIgniter\Shield\Tests\FakeUser;
 use CodeIgniter\Test\FeatureTestTrait;
@@ -49,9 +49,14 @@ final class LdapLoginTest extends DatabaseTestCase
     {
         parent::setUp();
 
-        $auth                            = config('Auth');
-        $auth->authenticators['session'] = Ldap::class;
-        $auth->validFields               = ['username'];
+        $auth                                    = config('Auth');
+        $auth->authenticators['session']         = Ldap::class;
+        $auth->validFields                       = ['username'];
+        $auth->sessionConfig['allowRemembering'] = false;
+        setting('Validation.login', [
+            'username' => ['label' => 'Auth.username', 'rules' => ['required', 'max_length[255]']],
+            'password' => ['label' => 'Auth.password', 'rules' => ['required', 'max_length[4096]']],
+        ]);
 
         $config = $this->createPartialMock(AuthLdap::class, ['connections']);
         $config->method('connections')->willReturnCallback(fn (): array => $this->connections);
@@ -76,6 +81,15 @@ final class LdapLoginTest extends DatabaseTestCase
         $routes = service('routes');
         auth()->routes($routes);
         Services::injectMock('routes', $routes);
+    }
+
+    public function testLoginViewUsesDirectoryUsernameField(): void
+    {
+        $response = $this->get('/login');
+
+        $response->assertStatus(200);
+        $response->assertSee('name="username"');
+        $response->assertDontSee('name="remember"');
     }
 
     public function testDirectoryLoginUsesShieldSessionAndDoesNotRememberPassword(): void
@@ -114,6 +128,11 @@ final class LdapLoginTest extends DatabaseTestCase
         $this->assertTrue($authenticator->isPending());
         $this->assertFalse(auth('session')->loggedIn());
         $this->assertTrue($authenticator->getPendingUser()->inGroup('admin'));
+        $this->seeInDatabase($this->tables['identities'], [
+            'user_id'      => $this->user->id,
+            'type'         => Ldap::ID_TYPE_EMAIL_PASSWORD,
+            'last_used_at' => null,
+        ]);
         $this->dontSeeInDatabase($this->tables['remember_tokens'], ['user_id' => $this->user->id]);
     }
 
@@ -140,7 +159,7 @@ final class LdapLoginTest extends DatabaseTestCase
 
         $response->assertSessionHas('error', lang('Auth.badAttempt'));
         $this->assertFalse(auth('session')->loggedIn());
-        $this->assertNull(session('_ci_old_input'));
+        $response->assertSessionMissing('_ci_old_input');
     }
 
     /**
@@ -167,7 +186,7 @@ final class LdapLoginTest extends DatabaseTestCase
 
         $response->assertStatus(302);
         $response->assertSessionHas('errors');
-        $this->assertNull(session('_ci_old_input'));
+        $response->assertSessionMissing('_ci_old_input');
     }
 
     public function testDisabledAuthenticatorFailsClosed(): void

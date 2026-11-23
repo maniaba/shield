@@ -21,7 +21,6 @@ use CodeIgniter\Shield\Config\Auth as AuthConfig;
 use CodeIgniter\Shield\Entities\User;
 use CodeIgniter\Shield\Models\UserModel;
 use InvalidArgumentException;
-use SensitiveParameter;
 
 /**
  * Facade for Authentication
@@ -115,7 +114,7 @@ class Auth
         return $user?->id;
     }
 
-    public function authenticate(#[SensitiveParameter] array $credentials): Result
+    public function authenticate(array $credentials): Result
     {
         $this->ensureAuthentication();
 
@@ -193,7 +192,7 @@ class Auth
      *
      * @throws AuthenticationException
      */
-    public function __call(string $method, #[SensitiveParameter] array $args)
+    public function __call(string $method, array $args)
     {
         $this->ensureAuthentication();
 

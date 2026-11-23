@@ -13,8 +13,8 @@ declare(strict_types=1);
 
 namespace CodeIgniter\Shield\Authentication\LDAP;
 
+use CodeIgniter\Shield\Exceptions\LdapException;
 use LDAP\Connection;
-use SensitiveParameter;
 
 /**
  * @phpstan-type DirectoryEntry array{dn: string, attributes: array<string, list<string>>}
@@ -52,7 +52,6 @@ final class NativeLdapDirectory implements LdapDirectoryInterface
         string $baseDn,
         string $filter,
         array $attributes,
-        #[SensitiveParameter]
         string $password,
         string $eligibilityFilter = '(objectClass=*)',
     ): array {
@@ -187,7 +186,7 @@ final class NativeLdapDirectory implements LdapDirectoryInterface
         }
     }
 
-    private function bind(Connection $ldap, string $dn, #[SensitiveParameter] string $password, bool $serviceAccount): void
+    private function bind(Connection $ldap, string $dn, string $password, bool $serviceAccount): void
     {
         if (@ldap_bind($ldap, $dn, $password)) {
             return;

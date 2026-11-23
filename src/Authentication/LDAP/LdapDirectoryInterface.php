@@ -13,8 +13,6 @@ declare(strict_types=1);
 
 namespace CodeIgniter\Shield\Authentication\LDAP;
 
-use SensitiveParameter;
-
 interface LdapDirectoryInterface
 {
     /**
@@ -39,7 +37,6 @@ interface LdapDirectoryInterface
         string $baseDn,
         string $filter,
         array $attributes,
-        #[SensitiveParameter]
         string $password,
         string $eligibilityFilter = '(objectClass=*)',
     ): array;
