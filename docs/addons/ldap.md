@@ -156,29 +156,49 @@ either a simple login name or a UPN. Keep the password field and the CSRF field.
 <input id="ldapUsername" type="text" name="username" autocomplete="username" required>
 ```
 
-In **app/Config/Routes.php**, use Shield's login view controller and register an
-application POST route for LDAP. The route ends with a redirect and Shield
-uses the standard session and action routes on the following request:
+Add a login action to your application's controller. The following example
+uses **app/Controllers/Login.php**. After a successful LDAP sign-in, the action
+redirects to Shield's login action if one is pending, or to the configured
+login destination.
 
 ```php
+<?php
+
+namespace App\Controllers;
+
 use CodeIgniter\HTTP\RedirectResponse;
 use CodeIgniter\Shield\Authentication\Authenticators\LDAP;
 
+final class Login extends BaseController
+{
+    /**
+     * Signs the user in with LDAP and continues any pending Shield login action.
+     */
+    public function loginAction(): RedirectResponse
+    {
+        /** @var LDAP $ldap */
+        $ldap   = auth('ldap')->getAuthenticator();
+        $result = $ldap->attempt($this->request->getPost(['username', 'password']));
+
+        if (! $result->isOK()) {
+            return redirect()->route('login')->with('error', $result->reason());
+        }
+
+        return $ldap->hasAction()
+            ? redirect()->route('auth-action-show')->withCookies()
+            : redirect()->to(config('Auth')->loginRedirect())->withCookies();
+    }
+}
+```
+
+In **app/Config/Routes.php**, use Shield's controller for the login form and
+register the application controller method for the POST route. This keeps the
+route definitions compatible with route caching.
+
+```php
 service('auth')->routes($routes, ['except' => ['login', 'register', 'magic-link']]);
 $routes->get('login', '\CodeIgniter\Shield\Controllers\LoginController::loginView', ['as' => 'login']);
-$routes->post('login', static function (): RedirectResponse {
-    /** @var LDAP $ldap */
-    $ldap = auth('ldap')->getAuthenticator();
-    $result = $ldap->attempt(service('request')->getPost(['username', 'password']));
-
-    if (! $result->isOK()) {
-        return redirect()->route('login')->with('error', $result->reason());
-    }
-
-    return $ldap->hasAction()
-        ? redirect()->route('auth-action-show')->withCookies()
-        : redirect()->to(config('Auth')->loginRedirect())->withCookies();
-}, ['filter' => 'auth-rates']);
+$routes->post('login', '\App\Controllers\Login::loginAction', ['filter' => 'auth-rates']);
 ```
 
 Use session-based CSRF protection for the POST route and apply Shield's

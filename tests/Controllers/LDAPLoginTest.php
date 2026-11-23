@@ -14,7 +14,6 @@ declare(strict_types=1);
 namespace CodeIgniter\Shield\Tests\Controllers;
 
 use CodeIgniter\Config\Factories;
-use CodeIgniter\HTTP\RedirectResponse;
 use CodeIgniter\Shield\Authentication\Actions\Email2FA;
 use CodeIgniter\Shield\Authentication\Authenticators\LDAP;
 use CodeIgniter\Shield\Authentication\Authenticators\Session;
@@ -79,19 +78,7 @@ final class LDAPLoginTest extends DatabaseTestCase
         $routes = service('routes');
         auth()->routes($routes, ['except' => ['login']]);
         $routes->get('login', '\CodeIgniter\Shield\Controllers\LoginController::loginView', ['as' => 'login']);
-        $routes->post('login', static function (): RedirectResponse {
-            /** @var LDAP $ldap */
-            $ldap   = auth('ldap')->getAuthenticator();
-            $result = $ldap->attempt(service('request')->getPost(['username', 'password']));
-
-            if (! $result->isOK()) {
-                return redirect()->route('login')->with('error', $result->reason());
-            }
-
-            return $ldap->hasAction()
-                ? redirect()->route('auth-action-show')->withCookies()
-                : redirect()->to(config('Auth')->loginRedirect())->withCookies();
-        });
+        $routes->post('login', '\Tests\Support\LDAP\LoginController::loginAction');
         Services::injectMock('routes', $routes);
     }
 
