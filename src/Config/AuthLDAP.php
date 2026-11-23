@@ -28,7 +28,7 @@ class AuthLDAP extends BaseConfig
     public array $loginDomains = [];
 
     /**
-     * @var array<string, int|string> Exact login identifier to expected local user ID.
+     * @var array<string, int|string> Case-insensitive login identifier to expected local user ID.
      */
     public array $localAccounts = [];
 

@@ -55,7 +55,7 @@ class LoginController extends BaseController
         $rules = $this->getValidationRules();
 
         if (! $this->validateData($this->request->getPost(), $rules, [], config('Auth')->DBGroup)) {
-            return redirect()->back()->with('errors', $this->validator->getErrors());
+            return redirect()->back()->withInput()->with('errors', $this->validator->getErrors());
         }
 
         /** @var array $credentials */
@@ -70,7 +70,7 @@ class LoginController extends BaseController
         // Attempt to login
         $result = $authenticator->remember($remember)->attempt($credentials);
         if (! $result->isOK()) {
-            return redirect()->route('login')->with('error', $result->reason());
+            return redirect()->route('login')->withInput()->with('error', $result->reason());
         }
 
         // If an action has been defined for login, start it up.

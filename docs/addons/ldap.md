@@ -123,44 +123,60 @@ be unique, readable, and stable across user renames and moves.
 
 ## Enable Shield web login
 
-In **app/Config/Auth.php**, configure the existing `session` alias to use
-`CodeIgniter\Shield\Authentication\Authenticators\LDAP::class`. Keep your
-other aliases and the existing default authenticator and chain. Set
-`$validFields` to `['username']`. The bundled login form accepts both simple
-usernames and UPNs. If you override the view or validation rules, use a text
-field named `username` and keep your rules compatible with directory login
-identifiers. Keep the action routes and normal session filters in place.
-
-For example, add these assignments to the application `Auth` constructor after
-calling `parent::__construct()`:
+In **app/Config/Auth.php**, register the `ldap` authenticator alongside the
+existing `session` authenticator. Shield's session filter and login actions
+continue to use the `session` alias and read the session created by LDAP.
+For an LDAP-only application, add these assignments after
+`parent::__construct()`:
 
 ```php
-$this->authenticators['session'] = \CodeIgniter\Shield\Authentication\Authenticators\LDAP::class;
-$this->validFields = ['username'];
+$this->authenticators['ldap'] = \CodeIgniter\Shield\Authentication\Authenticators\LDAP::class;
+$this->views['login'] = '\App\Views\auth\ldap_login';
 $this->allowRegistration = false;
 $this->allowMagicLinkLogins = false;
 $this->sessionConfig['allowRemembering'] = false;
 ```
 
-Add the login rules in **app/Config/Validation.php**. A text username field
-allows both simple identifiers and UPNs. [Customizing login rules](../customization/validation_rules.md#login)
+Copy Shield's login view to **app/Views/auth/ldap_login.php**. Replace the
+email field and its label with a text field named `username` so users can enter
+either a simple login name or a UPN. Keep the password field and the CSRF field.
 
-```php
-public array $login = [
-    'username' => ['label' => 'Auth.username', 'rules' => ['required', 'max_length[255]']],
-    'password' => ['label' => 'Auth.password', 'rules' => ['required', 'max_length[4096]']],
-];
+```html
+<label for="ldapUsername">Username</label>
+<input id="ldapUsername" type="text" name="username" autocomplete="username" required>
 ```
 
-Register Shield's usual routes in **app/Config/Routes.php**. This LDAP-only
-example omits public registration and magic-link routes:
+In **app/Config/Routes.php**, use Shield's login view controller and register an
+application POST route for LDAP. The route ends with a redirect and Shield
+uses the standard session and action routes on the following request:
 
 ```php
-service('auth')->routes($routes, ['except' => ['register', 'magic-link']]);
+use CodeIgniter\HTTP\RedirectResponse;
+use CodeIgniter\Shield\Authentication\Authenticators\LDAP;
+
+service('auth')->routes($routes, ['except' => ['login', 'register', 'magic-link']]);
+$routes->get('login', '\CodeIgniter\Shield\Controllers\LoginController::loginView', ['as' => 'login']);
+$routes->post('login', static function (): RedirectResponse {
+    /** @var LDAP $ldap */
+    $ldap = auth('ldap')->getAuthenticator();
+    $result = $ldap->attempt(service('request')->getPost(['username', 'password']));
+
+    if (! $result->isOK()) {
+        return redirect()->route('login')->with('error', $result->reason());
+    }
+
+    return $ldap->hasAction()
+        ? redirect()->route('auth-action-show')->withCookies()
+        : redirect()->to(config('Auth')->loginRedirect())->withCookies();
+}, ['filter' => 'auth-rates']);
 ```
 
-Use session-based CSRF protection and apply Shield's `auth-rates` filter to
-login and authentication action routes. [Shield controller filters](../references/controller_filters.md#rate-limiting)
+Use session-based CSRF protection for the POST route and apply Shield's
+`auth-rates` filter to the authentication action routes. The LDAP handler
+redirects with an error message only. CodeIgniter's `withInput()` would copy
+the submitted password to session flash data. Set
+`zend.exception_ignore_args=On` in production PHP settings to keep submitted
+credentials out of exception traces. [Shield controller filters](../references/controller_filters.md#rate-limiting)
 
 ## Login eligibility
 
@@ -244,24 +260,30 @@ before enabling just-in-time provisioning. If registration activation is
 configured, a newly provisioned account remains blocked until the application
 activates it through its trusted activation workflow.
 
+Users without a Shield password reset their password through the directory's
+account recovery process. Before enabling the `force-reset` filter on routes
+used by LDAP accounts, include Shield's fix for users without an email/password
+identity. [Force-reset fix](https://github.com/codeigniter4/shield/pull/1411)
+
 ## Local-only, LDAP-only, and hybrid login
 
 For local-only login, keep the ordinary `Session` authenticator under the
 `session` alias. For LDAP-only login, configure `LDAP` as described above and
 leave `$localAccounts` empty. An application can enable hybrid login by listing
-the exact identifiers and corresponding Shield user IDs assigned to local
+the identifiers and corresponding Shield user IDs assigned to local
 password login in **app/Config/AuthLDAP.php**:
 
 ```php
 public array $localAccounts = ['local-operator' => 10];
 ```
 
-Reserve these identifiers for local users. An exact match always uses Shield's
-local password verifier for the specified user ID. Every other identifier goes
-to its selected LDAP connection. Directory credential failures and directory
-outages both deny a new LDAP login. Test an emergency account with the directory
-unavailable. Keep it subject to the application's configured Shield login
-actions and protect its credentials independently of the directory.
+Reserve these identifiers for local users. Matching is case-insensitive, and
+configuration rejects duplicate identifiers that differ only in case. Shield
+verifies the local password for the specified user ID and requires a pending
+application login action before the operator can sign in. Configure an MFA
+action that applies to each operator and can be completed during a directory
+outage. Every other identifier goes to its selected LDAP connection. Directory
+credential failures and outages both deny a new LDAP login.
 
 ## Availability and session revocation
 
@@ -319,8 +341,8 @@ names in returned entries are lower-case and values may be binary. To test user
 credentials without creating a Shield user, call the directory's `authenticate()`
 method with that exact-match filter, the password, and the configured eligibility
 filter. Prompt for the password, pass it directly to that method, and discard it
-after the operation. The application login uses `auth('session')->attempt()`
-so configured login actions can complete through Shield.
+after the operation. The application login uses `auth('ldap')->attempt()`
+and configured login actions complete through Shield's standard session routes.
 
 To fetch connection settings from a database or another application source,
 override `AuthLDAP::getConnection()` and `AuthLDAP::connectionIds()`. Return a

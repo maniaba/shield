@@ -135,7 +135,6 @@ class Session implements AuthenticatorInterface
         $userAgent = (string) $request->getUserAgent();
 
         $result = $this->check($credentials);
-        unset($credentials['password']);
 
         // Credentials mismatch.
         if (! $result->isOK()) {
@@ -146,6 +145,7 @@ class Session implements AuthenticatorInterface
 
             // Fire an event on failure so devs have the chance to
             // let them know someone attempted to login to their account
+            unset($credentials['password']);
             Events::trigger('failedLogin', $credentials);
 
             return $result;
@@ -165,7 +165,8 @@ class Session implements AuthenticatorInterface
 
         $this->user = $user;
 
-        $this->touchLoginIdentity($user, $credentials);
+        // Update the user's last used date on their password identity.
+        $user->touchIdentity($user->getEmailIdentity());
 
         // Set auth action from database.
         $this->setAuthAction();
@@ -184,18 +185,6 @@ class Session implements AuthenticatorInterface
         }
 
         return $result;
-    }
-
-    /**
-     * @param array<string, string> $credentials
-     */
-    protected function touchLoginIdentity(User $user, array $credentials): void
-    {
-        $identity = $user->getEmailIdentity();
-
-        if ($identity !== null) {
-            $user->touchIdentity($identity);
-        }
     }
 
     /**
@@ -379,8 +368,9 @@ class Session implements AuthenticatorInterface
         /** @var Passwords $passwords */
         $passwords = service('passwords');
 
-        if ($user === null || $user->password_hash === null) {
-            // Do the same password work for unknown and passwordless accounts.
+        if ($user === null) {
+            // Verify against a fixed hash so an unknown identifier still does
+            // the expensive password check. The result is never accepted.
             $passwords->verify($givenPassword, config('Auth')->dummyPasswordHash);
 
             return new Result([

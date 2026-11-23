@@ -14,14 +14,17 @@ declare(strict_types=1);
 namespace CodeIgniter\Shield\Tests\Controllers;
 
 use CodeIgniter\Config\Factories;
+use CodeIgniter\HTTP\RedirectResponse;
 use CodeIgniter\Shield\Authentication\Actions\Email2FA;
 use CodeIgniter\Shield\Authentication\Authenticators\LDAP;
+use CodeIgniter\Shield\Authentication\Authenticators\Session;
 use CodeIgniter\Shield\Authentication\LDAP\LDAPConnection;
 use CodeIgniter\Shield\Authentication\LDAP\LDAPDirectoryInterface;
 use CodeIgniter\Shield\Authentication\LDAP\LDAPUserResolver;
 use CodeIgniter\Shield\Config\AuthLDAP;
 use CodeIgniter\Shield\Entities\User;
 use CodeIgniter\Shield\Exceptions\LDAPException;
+use CodeIgniter\Shield\Models\UserIdentityModel;
 use CodeIgniter\Shield\Tests\DatabaseTestCase;
 use CodeIgniter\Shield\Tests\FakeUser;
 use CodeIgniter\Test\FeatureTestTrait;
@@ -50,13 +53,8 @@ final class LDAPLoginTest extends DatabaseTestCase
         parent::setUp();
 
         $auth                                    = config('Auth');
-        $auth->authenticators['session']         = LDAP::class;
-        $auth->validFields                       = ['username'];
+        $auth->authenticators['ldap']            = LDAP::class;
         $auth->sessionConfig['allowRemembering'] = false;
-        setting('Validation.login', [
-            'username' => ['label' => 'Auth.username', 'rules' => ['required', 'max_length[255]']],
-            'password' => ['label' => 'Auth.password', 'rules' => ['required', 'max_length[4096]']],
-        ]);
 
         $config = $this->createPartialMock(AuthLDAP::class, ['connections']);
         $config->method('connections')->willReturnCallback(fn (): array => $this->connections);
@@ -79,17 +77,22 @@ final class LDAPLoginTest extends DatabaseTestCase
         Services::injectMock('ldapDirectory', $this->directory);
 
         $routes = service('routes');
-        auth()->routes($routes);
+        auth()->routes($routes, ['except' => ['login']]);
+        $routes->get('login', '\CodeIgniter\Shield\Controllers\LoginController::loginView', ['as' => 'login']);
+        $routes->post('login', static function (): RedirectResponse {
+            /** @var LDAP $ldap */
+            $ldap   = auth('ldap')->getAuthenticator();
+            $result = $ldap->attempt(service('request')->getPost(['username', 'password']));
+
+            if (! $result->isOK()) {
+                return redirect()->route('login')->with('error', $result->reason());
+            }
+
+            return $ldap->hasAction()
+                ? redirect()->route('auth-action-show')->withCookies()
+                : redirect()->to(config('Auth')->loginRedirect())->withCookies();
+        });
         Services::injectMock('routes', $routes);
-    }
-
-    public function testLoginViewUsesDirectoryUsernameField(): void
-    {
-        $response = $this->get('/login');
-
-        $response->assertStatus(200);
-        $response->assertSee('name="username"');
-        $response->assertDontSee('name="remember"');
     }
 
     public function testDirectoryLoginUsesShieldSessionAndDoesNotRememberPassword(): void
@@ -105,7 +108,6 @@ final class LDAPLoginTest extends DatabaseTestCase
         $this->assertInstanceOf(User::class, $user);
         $this->assertSame('directory-user', $user->username);
         $this->assertNull($user->getEmailIdentity());
-        $this->assertFalse($user->requiresPasswordReset());
         $this->seeInDatabase($this->tables['logins'], ['user_id' => $user->id, 'success' => 1]);
         $this->dontSeeInDatabase($this->tables['remember_tokens'], ['user_id' => $user->id]);
         $this->assertNull(session('_ci_old_input'));
@@ -124,7 +126,7 @@ final class LDAPLoginTest extends DatabaseTestCase
         $response->assertStatus(302);
         $this->assertSame(site_url('auth/a/show'), $response->getRedirectUrl());
         $authenticator = auth('session')->getAuthenticator();
-        $this->assertInstanceOf(LDAP::class, $authenticator);
+        $this->assertSame(Session::class, $authenticator::class);
         $this->assertTrue($authenticator->isPending());
         $this->assertFalse(auth('session')->loggedIn());
         $this->assertTrue($authenticator->getPendingUser()->inGroup('admin'));
@@ -136,7 +138,34 @@ final class LDAPLoginTest extends DatabaseTestCase
         $this->dontSeeInDatabase($this->tables['remember_tokens'], ['user_id' => $this->user->id]);
     }
 
-    public function testReservedLocalAccountDoesNotQueryDirectory(): void
+    public function testReservedLocalAccountRequiresConfiguredMfaWithoutQueryingDirectory(): void
+    {
+        config('Auth')->actions['login'] = Email2FA::class;
+        $this->user->createEmailIdentity(['email' => 'operator@example.com', 'password' => 'local-password']);
+        $this->ldap->localAccounts[$this->user->username] = $this->user->id;
+        $this->directory->expects($this->never())->method('authenticate');
+
+        $response = $this->post('/login', [
+            'username' => strtoupper($this->user->username),
+            'password' => 'local-password',
+            'remember' => '1',
+        ]);
+
+        $response->assertStatus(302);
+        $this->assertSame(site_url('auth/a/show'), $response->getRedirectUrl());
+        $this->assertFalse(auth('session')->loggedIn());
+        $this->dontSeeInDatabase($this->tables['remember_tokens'], ['user_id' => $this->user->id]);
+
+        $identity = model(UserIdentityModel::class)->getIdentityByType($this->user, Session::ID_TYPE_EMAIL_2FA);
+        $this->assertNotNull($identity);
+        $response = $this->withSession(['user' => session('user')])
+            ->post('/auth/a/verify', ['token' => $identity->secret]);
+
+        $response->assertStatus(302);
+        $this->assertSame($this->user->id, auth('session')->id());
+    }
+
+    public function testReservedLocalAccountWithoutAnApplicableActionCannotSignIn(): void
     {
         $this->user->createEmailIdentity(['email' => 'operator@example.com', 'password' => 'local-password']);
         $this->ldap->localAccounts[$this->user->username] = $this->user->id;
@@ -144,9 +173,18 @@ final class LDAPLoginTest extends DatabaseTestCase
 
         $response = $this->post('/login', ['username' => $this->user->username, 'password' => 'local-password']);
 
-        $response->assertStatus(302);
-        $response->assertSessionMissing('error');
-        $this->assertSame($this->user->id, auth('session')->id());
+        $response->assertSessionHas('error', lang('Auth.badAttempt'));
+        $this->assertFalse(auth('session')->loggedIn());
+    }
+
+    public function testReservedLocalAccountIdentifiersCannotDifferOnlyByCase(): void
+    {
+        $this->ldap->localAccounts = ['Operator' => 1, 'operator' => 2];
+
+        $this->expectException(LDAPException::class);
+        $this->expectExceptionMessage('invalid_configuration');
+
+        auth('ldap')->getAuthenticator();
     }
 
     #[DataProvider('provideDirectoryFailureNeverFallsBackOrFlashesPassword')]
@@ -185,7 +223,7 @@ final class LDAPLoginTest extends DatabaseTestCase
         $response = $this->post('/login', ['username' => 'directory-user', 'password' => '']);
 
         $response->assertStatus(302);
-        $response->assertSessionHas('errors');
+        $response->assertSessionHas('error', lang('Auth.badAttempt'));
         $response->assertSessionMissing('_ci_old_input');
     }
 

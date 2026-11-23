@@ -13,9 +13,12 @@ declare(strict_types=1);
 
 namespace CodeIgniter\Shield\Authentication\Authenticators;
 
+use CodeIgniter\Events\Events;
+use CodeIgniter\HTTP\IncomingRequest;
 use CodeIgniter\Shield\Authentication\LDAP\LDAPDirectoryInterface;
 use CodeIgniter\Shield\Authentication\LDAP\LDAPFilter;
 use CodeIgniter\Shield\Authentication\LDAP\LDAPUserResolver;
+use CodeIgniter\Shield\Authentication\Passwords;
 use CodeIgniter\Shield\Config\AuthLDAP;
 use CodeIgniter\Shield\Entities\User;
 use CodeIgniter\Shield\Exceptions\LDAPException;
@@ -28,6 +31,11 @@ class LDAP extends Session
     private readonly LDAPDirectoryInterface $directory;
     private readonly LDAPUserResolver $resolver;
 
+    /**
+     * @var array<string, int|string>
+     */
+    private readonly array $localAccounts;
+
     public function __construct(
         UserModel $provider,
         ?AuthLDAP $config = null,
@@ -36,9 +44,14 @@ class LDAP extends Session
     ) {
         parent::__construct($provider);
 
-        $this->ldapConfig = $config ?? config('AuthLDAP');
-        $this->directory  = $directory ?? service('ldapDirectory');
-        $this->resolver   = $resolver ?? new LDAPUserResolver($provider);
+        $this->ldapConfig    = $config ?? config('AuthLDAP');
+        $this->directory     = $directory ?? service('ldapDirectory');
+        $this->resolver      = $resolver ?? new LDAPUserResolver($provider);
+        $this->localAccounts = array_change_key_case($this->ldapConfig->localAccounts);
+
+        if (count($this->localAccounts) !== count($this->ldapConfig->localAccounts)) {
+            throw new LDAPException('invalid_configuration');
+        }
     }
 
     /**
@@ -47,17 +60,44 @@ class LDAP extends Session
     public function attempt(array $credentials): Result
     {
         $identifier = $credentials['username'] ?? '';
-        $password   = $credentials['password'] ?? '';
 
-        if (! $this->validIdentifier($identifier) || config('Auth')->validFields !== ['username']) {
+        if (! $this->validIdentifier($identifier) || $this->getSessionUserKey('id') !== null) {
             return $this->failedResult();
         }
 
-        // This login entry point always requires a fresh credential check.
-        $this->remember(false);
+        $result = $this->check($credentials);
+        $user   = $result->extraInfo();
 
-        // The parent sends failed login credentials (minus password) to event listeners.
-        return parent::attempt(['username' => $identifier, 'password' => is_string($password) ? $password : '']);
+        if (! $result->isOK() || ! $user instanceof User) {
+            return $this->rejectLogin($identifier);
+        }
+
+        $this->user = $user;
+        $started    = $this->startUpAction('login', $user);
+        $local      = isset($this->localAccounts[strtolower($identifier)]);
+
+        if ($local && ! $started) {
+            return $this->rejectLogin($identifier);
+        }
+
+        // Resolve pending actions before the session receives a user ID.
+        $pending = $this->hasAction();
+        if ($started && ! $pending) {
+            return $this->rejectLogin($identifier);
+        }
+
+        $this->recordAttempt($identifier, $user);
+        $this->startLogin($user);
+
+        if ($local && ($identity = $user->getEmailIdentity()) !== null) {
+            $user->touchIdentity($identity);
+        }
+
+        if (! $pending) {
+            $this->completeLogin($user);
+        }
+
+        return $result;
     }
 
     /**
@@ -74,7 +114,7 @@ class LDAP extends Session
             return $this->failedResult();
         }
 
-        $localId = $this->ldapConfig->localAccounts[$identifier] ?? null;
+        $localId = $this->localAccounts[strtolower($identifier)] ?? null;
         if ($localId !== null) {
             return $this->checkLocalAccount($identifier, $password, $localId);
         }
@@ -94,14 +134,27 @@ class LDAP extends Session
         }
     }
 
-    /**
-     * @param array<string, string> $credentials
-     */
-    protected function touchLoginIdentity(User $user, array $credentials): void
+    private function rejectLogin(string $identifier): Result
     {
-        if (isset($this->ldapConfig->localAccounts[$credentials['username'] ?? ''])) {
-            parent::touchLoginIdentity($user, $credentials);
-        }
+        $this->user = null;
+        $this->recordAttempt($identifier, null);
+        Events::trigger('failedLogin', ['username' => $identifier]);
+
+        return $this->failedResult();
+    }
+
+    private function recordAttempt(string $identifier, ?User $user): void
+    {
+        /** @var IncomingRequest $request */
+        $request = service('request');
+        $this->loginModel->recordLoginAttempt(
+            self::ID_TYPE_USERNAME,
+            $identifier,
+            $user !== null,
+            $request->getIPAddress(),
+            (string) $request->getUserAgent(),
+            $user?->id,
+        );
     }
 
     private function resolveUser(string $identifier, string $password): User
@@ -161,21 +214,30 @@ class LDAP extends Session
         );
     }
 
-    /**
-     * @param int|string $expectedId
-     */
-    private function checkLocalAccount(string $identifier, string $password, $expectedId): Result
+    private function checkLocalAccount(string $identifier, string $password, int|string $expectedId): Result
     {
-        $result = parent::check(['username' => $identifier, 'password' => $password]);
-        $user   = $result->extraInfo();
+        $user = $this->provider->findByCredentials(['username' => $identifier]);
+        $hash = $user?->password_hash;
 
-        if ($user instanceof User && (string) $user->id === (string) $expectedId
-            && ! $user->isBanned() && $user->isActivated()
-        ) {
-            return $result;
+        /** @var Passwords $passwords */
+        $passwords = service('passwords');
+
+        if ($user === null || (string) $user->id !== (string) $expectedId || $hash === null || $hash === '') {
+            $passwords->verify($password, config('Auth')->dummyPasswordHash);
+
+            return $this->failedResult();
         }
 
-        return $this->failedResult();
+        if (! $passwords->verify($password, $hash) || $user->isBanned() || ! $user->isActivated()) {
+            return $this->failedResult();
+        }
+
+        if ($passwords->needsRehash($hash)) {
+            $user->password_hash = $passwords->hash($password);
+            $this->provider->save($user);
+        }
+
+        return new Result(['success' => true, 'extraInfo' => $user]);
     }
 
     private function validIdentifier(mixed $identifier): bool

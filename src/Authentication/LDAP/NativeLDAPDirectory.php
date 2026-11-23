@@ -77,6 +77,8 @@ final class NativeLDAPDirectory implements LDAPDirectoryInterface
             $sameIdentity = LDAPFilter::equal($connection->externalIdAttribute, $ids[0]);
             $eligibility  = LDAPFilter::all($filter, $eligibilityFilter, $sameIdentity);
 
+            // Keep all three binds on the selected endpoint, including behind load balancers.
+            // Any failure terminates this connection in the finally block.
             $this->bind($ldap, $entry['dn'], $password, false);
             $this->bind($ldap, $connection->bindDn, $connection->bindPassword(), true);
 
@@ -170,17 +172,17 @@ final class NativeLDAPDirectory implements LDAPDirectoryInterface
 
     private function configure(Connection $ldap, LDAPConnection $connection): void
     {
-        if (! @ldap_get_option($ldap, LDAP_OPT_X_TLS_REQUIRE_CERT, $requireCert)
+        if (! ldap_get_option($ldap, LDAP_OPT_X_TLS_REQUIRE_CERT, $requireCert)
             || ! in_array($requireCert, [LDAP_OPT_X_TLS_DEMAND, LDAP_OPT_X_TLS_HARD], true)
         ) {
             throw new LDAPException('tls_verification_required');
         }
 
-        if (! @ldap_set_option($ldap, LDAP_OPT_PROTOCOL_VERSION, 3)
-            || ! @ldap_set_option($ldap, LDAP_OPT_REFERRALS, false)
-            || ! @ldap_set_option($ldap, LDAP_OPT_DEREF, LDAP_DEREF_NEVER)
-            || ! @ldap_set_option($ldap, LDAP_OPT_NETWORK_TIMEOUT, $connection->connectTimeout)
-            || ! @ldap_set_option($ldap, LDAP_OPT_TIMEOUT, $connection->searchTimeout)
+        if (! ldap_set_option($ldap, LDAP_OPT_PROTOCOL_VERSION, 3)
+            || ! ldap_set_option($ldap, LDAP_OPT_REFERRALS, false)
+            || ! ldap_set_option($ldap, LDAP_OPT_DEREF, LDAP_DEREF_NEVER)
+            || ! ldap_set_option($ldap, LDAP_OPT_NETWORK_TIMEOUT, $connection->connectTimeout)
+            || ! ldap_set_option($ldap, LDAP_OPT_TIMEOUT, $connection->searchTimeout)
         ) {
             throw new LDAPException('connection_configuration_failed');
         }
@@ -188,6 +190,8 @@ final class NativeLDAPDirectory implements LDAPDirectoryInterface
 
     private function bind(Connection $ldap, string $dn, string $password, bool $serviceAccount): void
     {
+        // ext-ldap emits native warnings for rejected binds. Classify the result
+        // by LDAP error code so directory diagnostics stay out of PHP error output.
         if (@ldap_bind($ldap, $dn, $password)) {
             return;
         }
@@ -254,7 +258,7 @@ final class NativeLDAPDirectory implements LDAPDirectoryInterface
             throw new LDAPException($this->searchFailure($ldap, $code));
         }
 
-        if (! @ldap_parse_result($ldap, $result, $code) || @ldap_first_reference($ldap, $result) !== false) {
+        if (! @ldap_parse_result($ldap, $result, $code) || ldap_first_reference($ldap, $result) !== false) {
             throw new LDAPException('incomplete_search');
         }
 
@@ -314,7 +318,7 @@ final class NativeLDAPDirectory implements LDAPDirectoryInterface
         // known certificate diagnostics without exposing the native message.
         if (in_array($code, [self::SERVER_DOWN, self::CONNECT_ERROR], true)
             && defined('LDAP_OPT_DIAGNOSTIC_MESSAGE')
-            && @ldap_get_option($ldap, LDAP_OPT_DIAGNOSTIC_MESSAGE, $diagnostic)
+            && ldap_get_option($ldap, LDAP_OPT_DIAGNOSTIC_MESSAGE, $diagnostic)
             && is_string($diagnostic)
             && (str_starts_with($diagnostic, 'TLS: hostname does not match ')
                 || str_starts_with($diagnostic, 'TLS: unable to get subjectAltName')

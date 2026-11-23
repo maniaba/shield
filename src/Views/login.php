@@ -1,9 +1,3 @@
-<?php
-$identifier = setting('Auth.validFields') === ['username'] ? 'username' : 'email';
-$fieldId    = 'floating' . ucfirst($identifier) . 'Input';
-$inputType  = $identifier === 'email' ? 'email' : 'text';
-$label      = lang('Auth.' . $identifier);
-?>
 <?= $this->extend(config('Auth')->views['layout']) ?>
 
 <?= $this->section('title') ?><?= lang('Auth.login') ?> <?= $this->endSection() ?>
@@ -37,9 +31,10 @@ $label      = lang('Auth.' . $identifier);
                 <form action="<?= url_to('login') ?>" method="post">
                     <?= csrf_field() ?>
 
+                    <!-- Email -->
                     <div class="form-floating mb-3">
-                        <input type="<?= $inputType ?>" class="form-control" id="<?= $fieldId ?>" name="<?= $identifier ?>" inputmode="<?= $inputType ?>" autocomplete="<?= $identifier ?>" placeholder="<?= $label ?>" value="<?= old($identifier) ?>" required>
-                        <label for="<?= $fieldId ?>"><?= $label ?></label>
+                        <input type="email" class="form-control" id="floatingEmailInput" name="email" inputmode="email" autocomplete="email" placeholder="<?= lang('Auth.email') ?>" value="<?= old('email') ?>" required>
+                        <label for="floatingEmailInput"><?= lang('Auth.email') ?></label>
                     </div>
 
                     <!-- Password -->
