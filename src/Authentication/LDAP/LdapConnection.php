@@ -1,0 +1,128 @@
+<?php
+
+declare(strict_types=1);
+
+/**
+ * This file is part of CodeIgniter Shield.
+ *
+ * (c) CodeIgniter Foundation <admin@codeigniter.com>
+ *
+ * For the full copyright and license information, please view
+ * the LICENSE file that was distributed with this source code.
+ */
+
+namespace CodeIgniter\Shield\Authentication\LDAP;
+
+use Closure;
+use SensitiveParameter;
+use Throwable;
+
+final readonly class LdapConnection
+{
+    /**
+     * @var Closure(): string
+     */
+    private Closure $readBindPassword;
+
+    /**
+     * @param array<int, string>         $hosts
+     * @param (Closure(): string)|string $bindPassword
+     * @param array<int, string>         $loginAttributes
+     * @param array<string, string>      $profileAttributes Local user field to LDAP attribute
+     */
+    public function __construct(
+        public string $id,
+        public array $hosts,
+        public string $baseDn,
+        public string $bindDn,
+        #[SensitiveParameter]
+        Closure|string $bindPassword,
+        public string $encryption = 'ldaps',
+        public ?int $port = null,
+        public int $connectTimeout = 5,
+        public int $searchTimeout = 5,
+        public ?string $userBaseDn = null,
+        public string $loginFilter = '(objectClass=person)',
+        public array $loginAttributes = ['uid'],
+        public string $externalIdAttribute = 'entryUUID',
+        public array $profileAttributes = [],
+        public bool $provisionUsers = false,
+        public string $eligibilityFilter = '(objectClass=*)',
+        public bool $updateProfile = true,
+    ) {
+        if (preg_match('/\A[a-zA-Z0-9][a-zA-Z0-9_-]{0,63}\z/', $id) !== 1
+            || $hosts === [] || count($hosts) > 10 || ! array_is_list($hosts)
+            || ! in_array($encryption, ['ldaps', 'starttls'], true)
+            || ($port !== null && ($port < 1 || $port > 65535))
+            || $connectTimeout < 1 || $connectTimeout > 60
+            || $searchTimeout < 1 || $searchTimeout > 60
+            || $loginAttributes === [] || count($loginAttributes) > 10 || ! array_is_list($loginAttributes)
+        ) {
+            throw new LdapException('invalid_configuration');
+        }
+
+        foreach ($hosts as $host) {
+            if (filter_var($host, FILTER_VALIDATE_IP) === false
+                && filter_var($host, FILTER_VALIDATE_DOMAIN, FILTER_FLAG_HOSTNAME) === false
+            ) {
+                throw new LdapException('invalid_endpoint');
+            }
+        }
+
+        foreach ([$baseDn, $userBaseDn ?? $baseDn, $bindDn] as $dn) {
+            if (trim($dn) === '' || str_contains($dn, "\0")) {
+                throw new LdapException('invalid_configuration');
+            }
+        }
+
+        if (is_string($bindPassword) && ($bindPassword === '' || str_contains($bindPassword, "\0"))) {
+            throw new LdapException('invalid_bind_secret');
+        }
+
+        LdapFilter::validate($loginFilter);
+        LdapFilter::validate($eligibilityFilter);
+
+        foreach ([$externalIdAttribute, ...$loginAttributes, ...array_values($profileAttributes)] as $attribute) {
+            LdapFilter::validateAttribute($attribute);
+        }
+
+        // A closure keeps the secret out of JSON, var_export(), and serialization.
+        $this->readBindPassword = $bindPassword instanceof Closure ? $bindPassword : static fn (): string => $bindPassword;
+    }
+
+    public function bindPassword(): string
+    {
+        try {
+            $password = ($this->readBindPassword)();
+            $valid    = $password !== '' && ! str_contains($password, "\0");
+        } catch (Throwable) {
+            throw new LdapException('bind_secret_unavailable');
+        }
+
+        if (! $valid) {
+            throw new LdapException('invalid_bind_secret');
+        }
+
+        return $password;
+    }
+
+    public function endpoint(string $host): string
+    {
+        $host = str_contains($host, ':') ? '[' . $host . ']' : $host;
+
+        return $this->encryption === 'ldaps'
+            ? 'ldaps://' . $host . ':' . ($this->port ?? 636)
+            : 'ldap://' . $host . ':' . ($this->port ?? 389);
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    public function __debugInfo(): array
+    {
+        $configuration = get_object_vars($this);
+        unset($configuration['readBindPassword']);
+
+        return $configuration;
+    }
+}
