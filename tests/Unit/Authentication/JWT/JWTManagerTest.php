@@ -14,6 +14,8 @@ declare(strict_types=1);
 namespace CodeIgniter\Shield\Tests\Unit\Authentication\JWT;
 
 use CodeIgniter\I18n\Time;
+use CodeIgniter\Shield\Auth;
+use CodeIgniter\Shield\Authentication\AuthenticationException;
 use CodeIgniter\Shield\Authentication\JWT\Exceptions\InvalidTokenException;
 use CodeIgniter\Shield\Authentication\JWT\JWSDecoder;
 use CodeIgniter\Shield\Authentication\JWT\JWSEncoder;
@@ -25,6 +27,7 @@ use CodeIgniter\Shield\Models\DatabaseException;
 use CodeIgniter\Shield\Models\JWTRevocationModel;
 use CodeIgniter\Shield\Models\UserModel;
 use CodeIgniter\Shield\Tests\TestCase;
+use Config\Services;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Attributes\Depends;
 
@@ -564,6 +567,174 @@ final class JWTManagerTest extends TestCase
         } finally {
             Time::setTestNow();
         }
+    }
+
+    public function testSessionTokenIssuanceRejectsPendingLogin(): void
+    {
+        $this->setBrowserUser(['auth_action' => 'PendingAction']);
+        $store = $this->createMock(JWTRevocationModel::class);
+        $store->expects($this->never())->method('isRevoked');
+        $manager = new JWTManager(revocationModel: $store);
+
+        $this->expectException(AuthenticationException::class);
+
+        $manager->generateSessionToken();
+    }
+
+    public function testSessionTokenScopeKeepsItsFirstDeadlineAndRotatesAfterItExpires(): void
+    {
+        $clock = Time::parse('2026-06-13 12:00:00', 'UTC');
+        $store = $this->createMock(JWTRevocationModel::class);
+        $store->expects($this->exactly(3))->method('isRevoked')->willReturn(false);
+        $manager                      = new JWTManager($clock, revocationModel: $store);
+        config('AuthJWT')->timeToLive = 120;
+        $this->setBrowserUser();
+
+        try {
+            Time::setTestNow($clock);
+            $first = $this->decodeJWT($manager->generateSessionToken(), 'payload');
+            Time::setTestNow($clock->addSeconds(90));
+            $second = $this->decodeJWT($manager->generateSessionToken(60), 'payload');
+            Time::setTestNow($clock->addSeconds(120));
+            $third = $this->decodeJWT($manager->generateSessionToken(60), 'payload');
+        } finally {
+            Time::setTestNow();
+        }
+
+        $this->assertSame('42', $first['sub']);
+        $this->assertMatchesRegularExpression('/\A[a-f0-9]{64}\z/', $first['shield_session_id']);
+        $this->assertSame($first['shield_session_id'], $second['shield_session_id']);
+        $this->assertNotSame($first['shield_session_id'], $third['shield_session_id']);
+        $this->assertSame($third['shield_session_id'], session('user')['shield_session_id']);
+        $this->assertSame($clock->getTimestamp() + 120, $first['exp']);
+        $this->assertSame($first['exp'], $second['exp']);
+        $this->assertSame($clock->getTimestamp() + 180, $third['exp']);
+    }
+
+    public function testScopeRevocationKeepsItsDeadlineAndBlocksMoreIssuance(): void
+    {
+        $this->setBrowserUser();
+        $store = $this->createMock(JWTRevocationModel::class);
+        $store->expects($this->exactly(2))->method('isRevoked')->willReturn(false, true);
+        $manager = new JWTManager(revocationModel: $store);
+        $payload = $this->decodeJWT($manager->generateSessionToken(MINUTE), 'payload');
+        $scope   = $payload['shield_session_id'];
+
+        $store->expects($this->once())->method('revoke')
+            ->with(hash('sha256', 'shield-session:' . $scope), $payload['exp']);
+
+        $manager->revokeCurrentSessionTokens();
+        $this->assertSame($scope, session('user')['shield_session_id']);
+
+        $this->expectException(RuntimeException::class);
+        $this->expectExceptionMessage('JWT session scope is revoked.');
+
+        $manager->generateSessionToken();
+    }
+
+    public function testTokenIssuedDuringLogoutCannotOutliveScopeRevocation(): void
+    {
+        $this->setBrowserUser();
+        $clock   = Time::now();
+        $store   = $this->createMock(JWTRevocationModel::class);
+        $manager = new JWTManager($clock, revocationModel: $store);
+        $checks  = 0;
+
+        $store->expects($this->exactly(2))->method('isRevoked')
+            ->willReturnCallback(static function () use ($manager, &$checks): bool {
+                if (++$checks === 2) {
+                    // Logout completes after issuance has read an unrevoked scope.
+                    $manager->revokeCurrentSessionTokens();
+                }
+
+                return false;
+            });
+
+        try {
+            Time::setTestNow($clock);
+            $first = $this->decodeJWT($manager->generateSessionToken(MINUTE), 'payload');
+            $scope = hash('sha256', 'shield-session:' . $first['shield_session_id']);
+            $store->expects($this->once())->method('revoke')->with($scope, $first['exp']);
+            $store->expects($this->once())->method('isAnyRevoked')->willReturn(true);
+
+            $lateToken = $manager->generateSessionToken(2 * MINUTE);
+            $late      = $this->decodeJWT($lateToken, 'payload');
+            $this->assertSame($first['shield_session_id'], $late['shield_session_id']);
+            $this->assertSame($first['exp'], $late['exp']);
+
+            $this->expectException(InvalidTokenException::class);
+            $this->expectExceptionMessage(lang('Auth.invalidJWT'));
+
+            $manager->parse($lateToken);
+        } finally {
+            Time::setTestNow();
+        }
+    }
+
+    public function testSessionRevocationWithoutAnActiveScopeDoesNotWrite(): void
+    {
+        $this->setBrowserUser();
+        $store = $this->createMock(JWTRevocationModel::class);
+        $store->expects($this->never())->method('revoke');
+        $manager = new JWTManager(revocationModel: $store);
+
+        $manager->revokeCurrentSessionTokens();
+
+        $expired = sprintf('%016x', Time::now()->getTimestamp() - 1) . str_repeat('a', 48);
+        session()->set('user', ['id' => 42, 'shield_session_id' => $expired]);
+
+        $manager->revokeCurrentSessionTokens();
+    }
+
+    #[DataProvider('provideParseRejectsInvalidSignedSessionScopeBeforeStorage')]
+    public function testParseRejectsInvalidSignedSessionScopeBeforeStorage(bool $withJti, int $ttl): void
+    {
+        $store = $this->createMock(JWTRevocationModel::class);
+        $store->expects($this->never())->method('isRevoked');
+        $store->expects($this->never())->method('isAnyRevoked');
+        $manager = new JWTManager(revocationModel: $store);
+
+        $now    = Time::now()->getTimestamp();
+        $claims = [
+            'shield_session_id' => sprintf('%016x', $now + MINUTE) . str_repeat('a', 48),
+            'exp'               => $now + $ttl,
+        ];
+
+        if ($withJti) {
+            $claims['jti'] = 'identifier';
+        }
+
+        $this->expectException(InvalidTokenException::class);
+        $this->expectExceptionMessage(lang('Auth.invalidJWT'));
+
+        $manager->parse((new JWSEncoder())->encode($claims));
+    }
+
+    /**
+     * @return iterable<string, array{bool, int}>
+     */
+    public static function provideParseRejectsInvalidSignedSessionScopeBeforeStorage(): iterable
+    {
+        yield 'scope cannot bypass token id validation' => [false, MINUTE];
+
+        yield 'token expiry cannot extend the session deadline' => [true, 2 * MINUTE];
+    }
+
+    /**
+     * @param array<string, int|string> $userInfo
+     */
+    private function setBrowserUser(array $userInfo = []): void
+    {
+        $users = $this->createStub(UserModel::class);
+        $users->method('findById')->willReturn(new User(['id' => 42]));
+        $auth = $this->getMockBuilder(Auth::class)
+            ->setConstructorArgs([config('Auth')])
+            ->onlyMethods(['getProvider'])
+            ->getMock();
+        $auth->method('getProvider')->willReturn($users);
+        Services::injectMock('auth', $auth);
+
+        session()->set('user', ['id' => 42] + $userInfo);
     }
 
     private function generateJWTWithAsymmetricKey(): string

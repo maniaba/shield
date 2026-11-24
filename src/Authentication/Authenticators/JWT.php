@@ -40,6 +40,8 @@ class JWT implements AuthenticatorInterface
      */
     public const ID_TYPE_JWT = 'jwt';
 
+    private const MAX_LOGGED_TOKEN_LENGTH = 255;
+
     protected ?User $user = null;
     protected JWTManager $jwtManager;
     protected TokenLoginModel $tokenLoginModel;
@@ -82,9 +84,14 @@ class JWT implements AuthenticatorInterface
         if (! $result->isOK()) {
             if ($config->recordLoginAttempt >= Auth::RECORD_LOGIN_ATTEMPT_FAILURE) {
                 // Record a failed login attempt.
+                $identifier = $credentials['token'] ?? '';
+                if (strlen($identifier) > self::MAX_LOGGED_TOKEN_LENGTH) {
+                    $identifier = 'JWT exceeds 255 characters';
+                }
+
                 $this->tokenLoginModel->recordLoginAttempt(
                     self::ID_TYPE_JWT,
-                    $credentials['token'] ?? '',
+                    $identifier,
                     false,
                     $ipAddress,
                     $userAgent,

@@ -159,6 +159,7 @@ endpoint once all servers that verify these JWTs have been upgraded.
 
 Each protected request with a JWT that has a `jti` adds one database lookup
 for revocation after the signature and revocation claims pass validation.
+For a session-bound JWT, the same query checks both the token and its session scope.
 
 `JWTManager::issue()` and `JWTManager::generateToken()` automatically add a
 random token ID (`jti`) when the caller omits it. Signed JWTs with a `jti`
@@ -395,15 +396,137 @@ expired bearer tokens receive `401 Unauthorized`, as do signed JWTs without a
 `jti`. If Shield cannot store the revocation, the controller returns
 `503 Service Unavailable`.
 
-This operation revokes the presented JWT. Use the application's existing flows
-to end browser sessions or revoke refresh tokens.
+This operation revokes the presented JWT. To end the browser session and
+revoke the JWTs issued from it, use the session-bound flow below.
 
-### Clean Up Expired Revocations
+## Issuing and Revoking Session-Bound JWTs
 
-The database stores a digest of the issuer and token ID with the expiration
-timestamp. JWTs with a `jti` use the signed `exp` as a strict cutoff without
-expiration leeway. Keep the clocks of verifying servers synchronized, and run
-the following from a scheduled application task to remove expired records.
+Use `JWTManager::generateSessionToken()` to issue JWTs for an eligible user
+after the browser has completed Shield sign-in and any configured
+authentication actions. This method assigns the reserved `shield_session_id`
+claim.
+`JWTManager::revokeCurrentSessionTokens()` revokes the outstanding JWTs
+issued from the current browser session. Keep the web session available
+until Shield can record that revocation.
+
+### Routes and Controller
+
+In **app/Config/Routes.php**, replace the existing `auth()->routes($routes)`
+call with the following routes. Shield still registers the normal sign-in and
+authentication action routes. Replace any GET logout links with POST forms.
+Use session-based CSRF protection in **app/Config/Security.php**.
+
+Set `Config\Session::$regenerateDestroy` to `true` so rotation retires the old
+session record. Keep the session open through issuance and logout so these
+operations use the session handler's lock.
+
+```php
+auth()->routes($routes, ['except' => ['logout']]);
+
+$routes->post('auth/jwt/session-token', '\App\Controllers\Auth\SessionJwtController::issue', [
+    'filter' => 'csrf',
+]);
+$routes->post('logout', '\App\Controllers\Auth\SessionJwtController::logout', [
+    'as'     => 'logout',
+    'filter' => 'csrf',
+]);
+```
+
+Create **app/Controllers/Auth/SessionJwtController.php**.
+
+```php
+<?php
+
+declare(strict_types=1);
+
+namespace App\Controllers\Auth;
+
+use App\Controllers\BaseController;
+use CodeIgniter\HTTP\ResponseInterface;
+use CodeIgniter\Shield\Authentication\AuthenticationException;
+use CodeIgniter\Shield\Authentication\JWTManager;
+use CodeIgniter\Shield\Exceptions\RuntimeException;
+
+class SessionJwtController extends BaseController
+{
+    public function issue(): ResponseInterface
+    {
+        /** @var JWTManager $manager */
+        $manager = service('jwtmanager');
+
+        try {
+            $token = $manager->generateSessionToken();
+        } catch (AuthenticationException) {
+            return $this->response->setStatusCode(ResponseInterface::HTTP_UNAUTHORIZED);
+        } catch (RuntimeException) {
+            return $this->response->setStatusCode(ResponseInterface::HTTP_SERVICE_UNAVAILABLE);
+        }
+
+        return $this->response
+            ->setHeader('Cache-Control', 'no-store')
+            ->setJSON([
+                'access_token' => $token,
+                'csrf_hash'    => csrf_hash(),
+            ]);
+    }
+
+    public function logout(): ResponseInterface
+    {
+        /** @var JWTManager $manager */
+        $manager = service('jwtmanager');
+
+        try {
+            $manager->revokeCurrentSessionTokens();
+        } catch (RuntimeException) {
+            return $this->response->setStatusCode(ResponseInterface::HTTP_SERVICE_UNAVAILABLE);
+        }
+
+        $url = config('Auth')->logoutRedirect();
+        auth('session')->logout();
+
+        return redirect()->to($url)->with('message', lang('Auth.successLogout'));
+    }
+}
+```
+
+Send the browser's session cookie and current CSRF token when posting to
+`/auth/jwt/session-token`. A JavaScript client can send the token in the
+configured `csrf_header()` header and reuse the `csrf_hash` returned by the
+endpoint when CSRF token regeneration is enabled. Update other POST forms on
+the page with that hash too. For example, a server-rendered logout form can
+use the named route and Shield's normal CSRF field.
+
+```php
+<form action="<?= esc(url_to('logout'), 'attr') ?>" method="post">
+    <?= csrf_field() ?>
+    <button type="submit">Sign out</button>
+</form>
+```
+
+If storing the session revocation fails, the logout endpoint returns
+`503 Service Unavailable` and the browser session remains available to retry.
+If CSRF regeneration is enabled, reload the logout form before retrying.
+On success it redirects after revoking the JWTs and ending the web session.
+
+### Lifetime and Renewal
+
+`generateSessionToken(?int $ttl = null, string $keyset = 'default')` accepts
+an optional lifetime in seconds and a configured signing key group. The first
+issued JWT fixes the expiry deadline for its session scope. JWTs issued within
+that scope expire by the same deadline, even if a later request specifies a
+longer lifetime. Once the deadline has passed, a browser with a valid signed-in
+session can request a token in a new scope.
+
+To obtain another JWT, post to the same endpoint using the browser session
+cookie and a current CSRF token.
+
+## Clean Up Expired Revocations
+
+The database stores a digest of the revoked token or session scope with its
+expiration timestamp. JWTs with a `jti` use the signed `exp` as a strict cutoff
+without expiration leeway. Keep the clocks of verifying servers synchronized,
+and run the following from a scheduled application task to remove expired
+records.
 
 ```php
 $removed = service('jwtmanager')->purgeExpiredRevocations();
@@ -495,8 +618,9 @@ you don't pass them.
 Login attempts are recorded in the `auth_token_logins` table, according to the
 configuration above.
 
-When a failed login attempt is logged, the raw token value sent is saved in
-the `identifier` column.
+For a failed login attempt, Shield records the raw token in the `identifier`
+column if its length is at most 255 bytes. Longer values are recorded as
+`JWT exceeds 255 characters`.
 
 When a successful login attempt is logged, the SHA256 hash value of the token
 sent is saved in the `identifier` column.

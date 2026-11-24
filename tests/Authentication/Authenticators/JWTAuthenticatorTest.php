@@ -207,6 +207,25 @@ final class JWTAuthenticatorTest extends DatabaseTestCase
         ]);
     }
 
+    public function testFailedAttemptUsesTheAuditColumnLimit(): void
+    {
+        $token = str_repeat('x', 255);
+
+        $this->assertFalse($this->auth->attempt(['token' => $token])->isOK());
+        $this->assertFalse($this->auth->attempt(['token' => $token . 'x'])->isOK());
+
+        $this->seeInDatabase($this->tables['token_logins'], [
+            'id_type'    => JWT::ID_TYPE_JWT,
+            'identifier' => $token,
+            'success'    => 0,
+        ]);
+        $this->seeInDatabase($this->tables['token_logins'], [
+            'id_type'    => JWT::ID_TYPE_JWT,
+            'identifier' => 'JWT exceeds 255 characters',
+            'success'    => 0,
+        ]);
+    }
+
     public function testAttemptBannedUser(): void
     {
         $token = $this->generateJWT();

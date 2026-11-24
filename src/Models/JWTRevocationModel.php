@@ -50,9 +50,17 @@ class JWTRevocationModel extends BaseModel
 
     public function isRevoked(string $identifier): bool
     {
+        return $this->isAnyRevoked([$identifier]);
+    }
+
+    /**
+     * @param non-empty-list<string> $identifiers
+     */
+    public function isAnyRevoked(array $identifiers): bool
+    {
         $result = $this->builder()
             ->select('identifier')
-            ->where('identifier', $identifier)
+            ->whereIn('identifier', $identifiers)
             ->get();
 
         if ($result === false) {
