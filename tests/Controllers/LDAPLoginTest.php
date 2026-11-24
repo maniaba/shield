@@ -228,15 +228,19 @@ final class LDAPLoginTest extends DatabaseTestCase
         ];
         $this->ldap->loginDomains['ad.example.com'] = 'corporate';
         $this->directory->expects($this->once())->method('authenticate')->with(
-            $this->callback(static fn (LDAPConnection $connection): bool => $connection->id === 'corporate'
-                && $connection->hosts === ['ad.example.com']
-                && $connection->bindPassword() === 'corporate-test-service-password'),
+            $this->isInstanceOf(LDAPConnection::class),
             'dc=ad,dc=example,dc=com',
             '(&(objectClass=person)(|(sAMAccountName=a\28\2a\29@AD.EXAMPLE.COM)(userPrincipalName=a\28\2a\29@AD.EXAMPLE.COM)))',
             ['objectGUID'],
             'directory-secret',
             '(objectClass=*)',
-        )->willThrowException(new LDAPException('user_not_found'));
+        )->willReturnCallback(static function (LDAPConnection $connection): never {
+            self::assertSame('corporate', $connection->id);
+            self::assertSame(['ad.example.com'], $connection->hosts);
+            self::assertSame('corporate-test-service-password', $connection->bindPassword());
+
+            throw new LDAPException('user_not_found');
+        });
 
         $response = $this->post('/login', ['username' => 'a(*)@AD.EXAMPLE.COM', 'password' => 'directory-secret']);
 
