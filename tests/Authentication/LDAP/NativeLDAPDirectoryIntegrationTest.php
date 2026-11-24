@@ -26,8 +26,9 @@ use PHPUnit\Framework\TestCase;
  */
 final class NativeLDAPDirectoryIntegrationTest extends TestCase
 {
-    private const BASE_DN      = 'dc=example,dc=test';
-    private const USER_BASE_DN = 'ou=people,' . self::BASE_DN;
+    private const BASE_DN       = 'dc=example,dc=test';
+    private const USER_BASE_DN  = 'ou=people,' . self::BASE_DN;
+    private const GROUP_BASE_DN = 'ou=groups,' . self::BASE_DN;
 
     #[DataProvider('provideUsesVerifiedTlsForLookupAndAuthentication')]
     public function testUsesVerifiedTlsForLookupAndAuthentication(string $encryption): void
@@ -143,6 +144,48 @@ final class NativeLDAPDirectoryIntegrationTest extends TestCase
 
         $this->assertCount(1, $entries);
         $this->assertContains($entries[0]['attributes']['uid'][0], ['alice', 'bob']);
+    }
+
+    public function testPreviewFindsGroupMembershipByEntryDn(): void
+    {
+        $connection = $this->connection();
+        $directory  = new NativeLDAPDirectory();
+        $aliceDn    = 'uid=alice,' . self::USER_BASE_DN;
+        $bobDn      = 'uid=bob,' . self::USER_BASE_DN;
+        $group      = '(objectClass=groupOfNames)';
+
+        $entries = $directory->preview(
+            $connection,
+            self::GROUP_BASE_DN,
+            LDAPFilter::all($group, LDAPFilter::equal('member', $aliceDn)),
+            ['cn', 'member'],
+        );
+
+        $this->assertSame([[
+            'dn'         => 'cn=shield-users,' . self::GROUP_BASE_DN,
+            'attributes' => ['cn' => ['shield-users'], 'member' => [$aliceDn]],
+        ]], $entries);
+
+        $this->assertSame([], $directory->preview(
+            $connection,
+            self::GROUP_BASE_DN,
+            LDAPFilter::all($group, LDAPFilter::equal('member', $bobDn)),
+            ['cn', 'member'],
+        ));
+    }
+
+    public function testAuthenticationDoesNotReturnAttributesProtectedFromTheServiceAccount(): void
+    {
+        $entry = (new NativeLDAPDirectory())->authenticate(
+            $this->connection(),
+            self::USER_BASE_DN,
+            '(uid=alice)',
+            ['uid', 'userPassword'],
+            'alicePassword!',
+        );
+
+        $this->assertSame(['alice'], $entry['attributes']['uid']);
+        $this->assertArrayNotHasKey('userpassword', $entry['attributes']);
     }
 
     public function testUsesNextEndpointWhenTheFirstIsUnavailable(): void

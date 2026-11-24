@@ -442,41 +442,21 @@ application group assignments, permissions, and revocation through the
 
 ## Testing Against OpenLDAP
 
-The regular PHPUnit suite does not need a running directory. The optional
-`NativeLDAPDirectoryIntegrationTest` uses the disposable OpenLDAP fixture in
-`tests/_support/LDAP`. With Docker, OpenSSL, the PHP LDAP extension, and the test
-dependencies available, run the following from the Shield checkout:
+The **OpenLDAP Integration Tests** workflow runs
+`NativeLDAPDirectoryIntegrationTest` against the Docker fixture in
+`tests/_support/LDAP`. It uses test certificates and waits for the fixture to
+accept service-account binds over both LDAPS and StartTLS. The integration
+test run fails if any test is skipped.
+
+To run the same checks locally, install the test dependencies and make sure
+Docker, OpenSSL, and PHP's `ldap` extension are available. Run the following
+command from the Shield checkout.
 
 ```bash
-tls_dir=$(mktemp -d)
-openssl req -x509 -newkey rsa:2048 -noenc -days 2 \
-  -subj '/CN=Shield LDAP test CA' -addext 'basicConstraints=critical,CA:TRUE' \
-  -keyout "$tls_dir/ca.key" -out "$tls_dir/ca.pem"
-openssl req -newkey rsa:2048 -noenc -subj '/CN=Shield LDAP fixture' \
-  -keyout "$tls_dir/server.key" -out "$tls_dir/server.csr"
-printf 'subjectAltName=IP:127.0.0.1\nextendedKeyUsage=serverAuth\n' > "$tls_dir/server.ext"
-openssl x509 -req -days 2 -in "$tls_dir/server.csr" -CA "$tls_dir/ca.pem" \
-  -CAkey "$tls_dir/ca.key" -CAcreateserial -extfile "$tls_dir/server.ext" \
-  -out "$tls_dir/server.pem"
-
-docker build -t shield-openldap-test tests/_support/LDAP
-docker run --rm --detach --name shield-openldap-test \
-  -p 127.0.0.1:23890:1389 -p 127.0.0.1:26360:1636 \
-  --mount "type=bind,src=$tls_dir,dst=/tls,readonly" shield-openldap-test
-timeout 20 bash -c 'until [ "$(docker inspect --format "{{.State.Health.Status}}" shield-openldap-test)" = healthy ]; do sleep 1; done'
-
-LDAPTLS_CACERT="$tls_dir/ca.pem" LDAPTLS_REQCERT=demand LDAPTLS_REQSAN=demand \
-  SHIELD_LDAP_TEST_PORT=23890 SHIELD_LDAP_TEST_LDAPS_PORT=26360 \
-  SHIELD_LDAP_TEST_WRONG_HOST=localhost \
-  SHIELD_LDAP_TEST_UNTRUSTED_CA=/etc/ssl/certs/ca-certificates.crt \
-  vendor/bin/phpunit --no-extensions --no-coverage --filter NativeLDAPDirectoryIntegrationTest
-
-docker stop shield-openldap-test
+bash tests/_support/LDAP/run-integration-tests.sh
 ```
 
-The fixture uses test credentials and a CA valid for two days. Keep its ports
-on loopback. If your operating system uses a different path for its CA bundle,
-use that path for the untrusted-chain test. The bundle must exclude the
-fixture's CA. The optional fixture exercises the PHP transport. Test AD-specific
-GUID, account filters, and transitive group membership separately against a
-disposable AD DS or Samba AD test domain.
+The script publishes the fixture's ports on loopback and stops the container
+when the run finishes. The regular PHPUnit suite can run without the fixture.
+Test AD-specific GUIDs, account filters, and transitive group membership
+separately against a disposable AD DS or Samba AD test domain.
