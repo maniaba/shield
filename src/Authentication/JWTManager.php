@@ -28,6 +28,8 @@ use stdClass;
  */
 class JWTManager
 {
+    private const SESSION_SCOPE = 'shield_session_id';
+
     protected Time $clock;
     protected JWSEncoder $jwsEncoder;
     protected JWSDecoder $jwsDecoder;
@@ -70,6 +72,106 @@ class JWTManager
     }
 
     /**
+     * Issues a JWT bound to the current authenticated browser session.
+     *
+     * The first JWT fixes the scope deadline. Subsequent JWTs are capped at
+     * that deadline, and a later scope can begin once the deadline has passed.
+     *
+     * @throws AuthenticationException If no eligible browser user is logged in.
+     * @throws RuntimeException        If the scope cannot be used for issuance.
+     */
+    public function generateSessionToken(?int $ttl = null, string $keyset = 'default'): string
+    {
+        $user = auth('session')->user();
+        if ($user === null || $user->id === null || $user->isBanned() || ! $user->isActivated()) {
+            throw AuthenticationException::forInvalidUser();
+        }
+
+        $session      = session();
+        $sessionField = setting('Auth.sessionConfig')['field'];
+        $userInfo     = $session->get($sessionField);
+        $userId       = $userInfo['id'] ?? null;
+
+        if ((! is_int($userId) && ! is_string($userId)) || (string) $userId !== (string) $user->id) {
+            throw AuthenticationException::forInvalidUser();
+        }
+
+        $now = $this->clock::now()->getTimestamp();
+        $ttl ??= config('AuthJWT')->timeToLive;
+
+        if ($ttl < 1 || $now > PHP_INT_MAX - $ttl) {
+            throw new RuntimeException('JWT session token lifetime is invalid.');
+        }
+
+        $requestedExpiry = $now + $ttl;
+        $scope           = $userInfo[self::SESSION_SCOPE] ?? null;
+        $scopeExpiry     = 0;
+
+        if ($scope !== null && (! is_string($scope) || ($scopeExpiry = $this->scopeExpiry($scope)) === null)) {
+            throw new RuntimeException('JWT session scope is invalid.');
+        }
+
+        if ($scope === null || $scopeExpiry <= $now) {
+            $scopeExpiry = $requestedExpiry;
+            // The deadline is part of the identifier, so it cannot be extended for this scope.
+            $scope = sprintf('%016x', $scopeExpiry) . bin2hex(random_bytes(24));
+
+            $userInfo[self::SESSION_SCOPE] = $scope;
+            $session->set($sessionField, $userInfo);
+        }
+
+        try {
+            $revoked = $this->revocations()->isRevoked($this->scopeDigest($scope));
+        } catch (NativeRuntimeException) {
+            throw new RuntimeException('JWT session revocation could not be checked.');
+        }
+
+        if ($revoked) {
+            throw new RuntimeException('JWT session scope is revoked.');
+        }
+
+        $expiresAt = min($requestedExpiry, $scopeExpiry);
+        if ($expiresAt <= $this->clock::now()->getTimestamp()) {
+            throw new RuntimeException('JWT session scope expired during issuance.');
+        }
+
+        return $this->generateToken($user, [
+            self::SESSION_SCOPE => $scope,
+            'iat'               => $now,
+            'exp'               => $expiresAt,
+        ], keyset: $keyset);
+    }
+
+    /**
+     * Revokes JWTs bound to the current browser session.
+     *
+     * The session data stays available for retry or for the caller to log out.
+     *
+     * @throws RuntimeException If the scope is invalid or storage fails.
+     */
+    public function revokeCurrentSessionTokens(): void
+    {
+        $scope = session(setting('Auth.sessionConfig')['field'])[self::SESSION_SCOPE] ?? null;
+        if ($scope === null) {
+            return;
+        }
+
+        if (! is_string($scope) || ($expiresAt = $this->scopeExpiry($scope)) === null) {
+            throw new RuntimeException('JWT session scope is invalid.');
+        }
+
+        if ($expiresAt <= $this->clock::now()->getTimestamp()) {
+            return;
+        }
+
+        try {
+            $this->revocations()->revoke($this->scopeDigest($scope), $expiresAt);
+        } catch (NativeRuntimeException) {
+            throw new RuntimeException('JWT session revocation could not be stored.');
+        }
+    }
+
+    /**
      * Issues Signed JWT (JWS)
      *
      * @param array                      $claims  The payload items.
@@ -101,14 +203,17 @@ class JWTManager
         $payload = $this->jwsDecoder->decode($encodedToken, $keyset);
 
         // Keep signed JWTs issued before token IDs were added usable.
-        if (! property_exists($payload, 'jti')) {
+        if (! property_exists($payload, 'jti') && ! property_exists($payload, self::SESSION_SCOPE)) {
             return $payload;
         }
 
         [$identifier, $expiresAt] = $this->revocationIdentity($payload);
+        $scopeIdentifier          = $this->signedScopeDigest($payload, $expiresAt);
 
         try {
-            $revoked = $this->revocations()->isRevoked($identifier);
+            $revoked = $scopeIdentifier === null
+                ? $this->revocations()->isRevoked($identifier)
+                : $this->revocations()->isAnyRevoked([$identifier, $scopeIdentifier]);
         } catch (NativeRuntimeException) {
             log_message('error', '[Shield] JWT revocation lookup failed.');
             $revoked = true;
@@ -135,6 +240,7 @@ class JWTManager
         // Verify again without checking the revocation store so retries are safe.
         $payload                  = $this->jwsDecoder->decode($encodedToken, $keyset);
         [$identifier, $expiresAt] = $this->revocationIdentity($payload);
+        $this->signedScopeDigest($payload, $expiresAt);
 
         try {
             $this->revocations()->revoke($identifier, $expiresAt);
@@ -186,6 +292,37 @@ class JWTManager
         if ($expiresAt <= $this->clock::now()->getTimestamp()) {
             throw new InvalidTokenException(lang('Auth.expiredJWT'), InvalidTokenException::EXPIRED_TOKEN);
         }
+    }
+
+    private function signedScopeDigest(stdClass $payload, int $expiresAt): ?string
+    {
+        if (! property_exists($payload, self::SESSION_SCOPE)) {
+            return null;
+        }
+
+        $scope = $payload->{self::SESSION_SCOPE};
+
+        if (! is_string($scope) || ($scopeExpiry = $this->scopeExpiry($scope)) === null || $expiresAt > $scopeExpiry) {
+            throw new InvalidTokenException(lang('Auth.invalidJWT'), InvalidTokenException::INVALID_TOKEN);
+        }
+
+        return $this->scopeDigest($scope);
+    }
+
+    private function scopeExpiry(string $scope): ?int
+    {
+        if (preg_match('/\A[0-9a-f]{64}\z/', $scope) !== 1) {
+            return null;
+        }
+
+        $expiresAt = hexdec(substr($scope, 0, 16));
+
+        return is_int($expiresAt) && $expiresAt > 0 ? $expiresAt : null;
+    }
+
+    private function scopeDigest(string $scope): string
+    {
+        return hash('sha256', 'shield-session:' . $scope);
     }
 
     private function revocations(): JWTRevocationModel
