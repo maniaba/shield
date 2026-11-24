@@ -17,7 +17,6 @@ use CodeIgniter\Shield\Authentication\LDAP\LDAPConnection;
 use CodeIgniter\Shield\Exceptions\LDAPException;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
-use RuntimeException;
 
 /**
  * @internal
@@ -124,23 +123,28 @@ final class LDAPConnectionTest extends TestCase
         yield 'StartTLS custom port' => ['starttls', 1389, 'ldap://[2001:db8::1]:1389'];
     }
 
-    public function testSanitizesExceptionsFromBindSecretProvider(): void
+    #[DataProvider('provideRejectsInvalidBindPassword')]
+    public function testRejectsInvalidBindPassword(string $password): void
     {
-        $connection = new LDAPConnection(
+        $this->expectException(LDAPException::class);
+        $this->expectExceptionMessage('invalid_bind_secret');
+
+        new LDAPConnection(
             'test',
             ['ldap.example.test'],
             'dc=example,dc=test',
             'cn=reader,dc=example,dc=test',
-            static fn (): never => throw new RuntimeException('private data from secret store'),
+            $password,
         );
+    }
 
-        try {
-            $connection->bindPassword();
-            $this->fail('A failing secret provider must not supply a bind password.');
-        } catch (LDAPException $exception) {
-            $this->assertSame('bind_secret_unavailable', $exception->reason);
-            $this->assertStringNotContainsString('private data from secret store', $exception->getMessage());
-            $this->assertNull($exception->getPrevious());
-        }
+    /**
+     * @return iterable<string, array{string}>
+     */
+    public static function provideRejectsInvalidBindPassword(): iterable
+    {
+        yield 'empty password' => [''];
+
+        yield 'NUL byte' => ["reader\0Password!"];
     }
 }

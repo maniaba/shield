@@ -13,7 +13,6 @@ declare(strict_types=1);
 
 namespace CodeIgniter\Shield\Tests\Authentication\LDAP;
 
-use ArrayObject;
 use CodeIgniter\Shield\Authentication\LDAP\LDAPConnection;
 use CodeIgniter\Shield\Authentication\LDAP\NativeLDAPDirectory;
 use CodeIgniter\Shield\Exceptions\LDAPException;
@@ -30,24 +29,10 @@ final class NativeLDAPDirectoryTest extends TestCase
     {
         $connection = new LDAPConnection('test', ['ldap.example.test'], 'dc=example,dc=test', 'cn=reader,dc=example,dc=test', 'readerPassword!');
 
+        $this->assertSame('readerPassword!', $connection->bindPassword());
         $this->assertStringNotContainsString('readerPassword!', print_r($connection, true));
         $this->assertStringNotContainsString('readerPassword!', var_export($connection, true));
         $this->assertStringNotContainsString('readerPassword!', json_encode($connection, JSON_THROW_ON_ERROR));
-    }
-
-    public function testReadsBindSecretLazily(): void
-    {
-        $reads  = new ArrayObject();
-        $secret = static function () use ($reads): string {
-            $reads->append(true);
-
-            return 'readerPassword!';
-        };
-        $connection = new LDAPConnection('test', ['ldap.example.test'], 'dc=example,dc=test', 'cn=reader,dc=example,dc=test', $secret);
-
-        $this->assertCount(0, $reads);
-        $this->assertSame('readerPassword!', $connection->bindPassword());
-        $this->assertCount(1, $reads);
     }
 
     public function testInvalidEndpointThrowsLocalizedShieldException(): void

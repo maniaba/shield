@@ -15,10 +15,9 @@ namespace CodeIgniter\Shield\Authentication\LDAP;
 
 use Closure;
 use CodeIgniter\Shield\Exceptions\LDAPException;
-use Throwable;
 
 /**
- * Immutable settings for an LDAP directory, with bind credentials available on demand.
+ * Immutable settings and a bind credential for an LDAP directory.
  */
 final readonly class LDAPConnection
 {
@@ -28,12 +27,11 @@ final readonly class LDAPConnection
     private Closure $readBindPassword;
 
     /**
-     * Accept a bind credential or a lazy secret provider for the validated connection settings.
+     * Validate the directory settings and bind credential.
      *
-     * @param array<int, string>         $hosts
-     * @param (Closure(): string)|string $bindPassword
-     * @param array<int, string>         $loginAttributes
-     * @param array<string, string>      $profileAttributes Local user field to LDAP attribute
+     * @param array<int, string>    $hosts
+     * @param array<int, string>    $loginAttributes
+     * @param array<string, string> $profileAttributes Local user field to LDAP attribute
      *
      * @throws LDAPException If the connection settings are invalid.
      */
@@ -42,7 +40,7 @@ final readonly class LDAPConnection
         public array $hosts,
         public string $baseDn,
         public string $bindDn,
-        Closure|string $bindPassword,
+        string $bindPassword,
         public string $encryption = 'ldaps',
         public ?int $port = null,
         public int $connectTimeout = 5,
@@ -63,6 +61,9 @@ final readonly class LDAPConnection
             || $connectTimeout < 1 || $connectTimeout > 60
             || $searchTimeout < 1 || $searchTimeout > 60
             || $loginAttributes === [] || count($loginAttributes) > 10 || ! array_is_list($loginAttributes)
+            || array_filter($hosts, is_string(...)) !== $hosts
+            || array_filter($loginAttributes, is_string(...)) !== $loginAttributes
+            || array_filter($profileAttributes, is_string(...)) !== $profileAttributes
         ) {
             throw new LDAPException('invalid_configuration');
         }
@@ -81,7 +82,7 @@ final readonly class LDAPConnection
             }
         }
 
-        if (is_string($bindPassword) && ($bindPassword === '' || str_contains($bindPassword, "\0"))) {
+        if ($bindPassword === '' || str_contains($bindPassword, "\0")) {
             throw new LDAPException('invalid_bind_secret');
         }
 
@@ -93,28 +94,15 @@ final readonly class LDAPConnection
         }
 
         // A closure keeps the secret out of JSON, var_export(), and serialization.
-        $this->readBindPassword = $bindPassword instanceof Closure ? $bindPassword : static fn (): string => $bindPassword;
+        $this->readBindPassword = static fn (): string => $bindPassword;
     }
 
     /**
-     * Read the service account credential just before binding.
-     *
-     * @throws LDAPException If the credential is unavailable or invalid.
+     * Return the service account credential for the bind operation.
      */
     public function bindPassword(): string
     {
-        try {
-            $password = ($this->readBindPassword)();
-            $valid    = $password !== '' && ! str_contains($password, "\0");
-        } catch (Throwable) {
-            throw new LDAPException('bind_secret_unavailable');
-        }
-
-        if (! $valid) {
-            throw new LDAPException('invalid_bind_secret');
-        }
-
-        return $password;
+        return ($this->readBindPassword)();
     }
 
     /**

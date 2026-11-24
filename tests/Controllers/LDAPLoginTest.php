@@ -42,11 +42,6 @@ final class LDAPLoginTest extends DatabaseTestCase
     private AuthLDAP $ldap;
     private LDAPDirectoryInterface&MockObject $directory;
 
-    /**
-     * @var array<string, LDAPConnection>
-     */
-    private array $connections = [];
-
     protected function setUp(): void
     {
         parent::setUp();
@@ -55,21 +50,17 @@ final class LDAPLoginTest extends DatabaseTestCase
         $auth->authenticators['ldap']            = LDAP::class;
         $auth->sessionConfig['allowRemembering'] = false;
 
-        $config = $this->createPartialMock(AuthLDAP::class, ['connections']);
-        $config->method('connections')->willReturnCallback(fn (): array => $this->connections);
-
-        $this->ldap                    = $config;
-        $this->ldap->enabled           = true;
-        $this->ldap->defaultConnection = 'example';
-        $this->connections['example']  = new LDAPConnection(
-            id: 'example',
-            hosts: ['ldap.example.com'],
-            baseDn: 'dc=example,dc=com',
-            bindDn: 'cn=reader,dc=example,dc=com',
-            bindPassword: 'test-service-password',
-            profileAttributes: ['username' => 'uid'],
-            provisionUsers: true,
-        );
+        $this->ldap                         = new AuthLDAP();
+        $this->ldap->enabled                = true;
+        $this->ldap->defaultConnection      = 'example';
+        $this->ldap->connections['example'] = [
+            'hosts'             => ['ldap.example.com'],
+            'baseDn'            => 'dc=example,dc=com',
+            'bindDn'            => 'cn=reader,dc=example,dc=com',
+            'bindPassword'      => 'example-test-service-password',
+            'profileAttributes' => ['username' => 'uid'],
+            'provisionUsers'    => true,
+        ];
         Factories::injectMock('config', 'AuthLDAP', $this->ldap);
 
         $this->directory = $this->createMock(LDAPDirectoryInterface::class);
@@ -227,20 +218,20 @@ final class LDAPLoginTest extends DatabaseTestCase
 
     public function testUpnRoutesToNamedConnectionAndEscapesAssertionValue(): void
     {
-        $connection = new LDAPConnection(
-            id: 'corporate',
-            hosts: ['ad.example.com'],
-            baseDn: 'dc=ad,dc=example,dc=com',
-            bindDn: 'cn=reader,dc=ad,dc=example,dc=com',
-            bindPassword: 'test-service-password',
-            loginAttributes: ['sAMAccountName', 'userPrincipalName'],
-            externalIdAttribute: 'objectGUID',
-        );
-        $this->connections['corporate']             = $connection;
+        $this->ldap->connections['corporate'] = [
+            'hosts'               => ['ad.example.com'],
+            'baseDn'              => 'dc=ad,dc=example,dc=com',
+            'bindDn'              => 'cn=reader,dc=ad,dc=example,dc=com',
+            'bindPassword'        => 'corporate-test-service-password',
+            'loginAttributes'     => ['sAMAccountName', 'userPrincipalName'],
+            'externalIdAttribute' => 'objectGUID',
+        ];
         $this->ldap->loginDomains['ad.example.com'] = 'corporate';
         $this->directory->expects($this->once())->method('authenticate')->with(
-            $connection,
-            $connection->baseDn,
+            $this->callback(static fn (LDAPConnection $connection): bool => $connection->id === 'corporate'
+                && $connection->hosts === ['ad.example.com']
+                && $connection->bindPassword() === 'corporate-test-service-password'),
+            'dc=ad,dc=example,dc=com',
             '(&(objectClass=person)(|(sAMAccountName=a\28\2a\29@AD.EXAMPLE.COM)(userPrincipalName=a\28\2a\29@AD.EXAMPLE.COM)))',
             ['objectGUID'],
             'directory-secret',
@@ -254,15 +245,14 @@ final class LDAPLoginTest extends DatabaseTestCase
 
     public function testDirectoryGuidResolvesTheExplicitLinkAfterLoginRename(): void
     {
-        $this->connections['example'] = new LDAPConnection(
-            id: 'example',
-            hosts: ['ad.example.com'],
-            baseDn: 'dc=ad,dc=example,dc=com',
-            bindDn: 'cn=reader,dc=ad,dc=example,dc=com',
-            bindPassword: 'test-service-password',
-            loginAttributes: ['userPrincipalName'],
-            externalIdAttribute: 'objectGUID',
-        );
+        $this->ldap->connections['example'] = [
+            'hosts'               => ['ad.example.com'],
+            'baseDn'              => 'dc=ad,dc=example,dc=com',
+            'bindDn'              => 'cn=reader,dc=ad,dc=example,dc=com',
+            'bindPassword'        => 'example-test-service-password',
+            'loginAttributes'     => ['userPrincipalName'],
+            'externalIdAttribute' => 'objectGUID',
+        ];
         (new LDAPUserResolver(auth()->getProvider()))->link(
             'example',
             '00112233-4455-6677-8899-aabbccddeeff',

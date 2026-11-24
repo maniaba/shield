@@ -16,6 +16,7 @@ namespace CodeIgniter\Shield\Config;
 use CodeIgniter\Config\BaseConfig;
 use CodeIgniter\Shield\Authentication\LDAP\LDAPConnection;
 use CodeIgniter\Shield\Exceptions\LDAPException;
+use Throwable;
 
 /**
  * Opt-in LDAP settings for choosing a directory or an explicitly reserved local account at login.
@@ -33,6 +34,27 @@ class AuthLDAP extends BaseConfig
     public string $defaultConnection = '';
 
     /**
+     * Directory settings keyed by connection ID. Declare bindPassword to allow
+     * CodeIgniter to override it through authldap.connections.<id>.bindPassword.
+     *
+     * @var array<string, array<string, mixed>>
+     */
+    public array $connections = [
+        // 'corporate' => [
+        //     'hosts'               => ['dc01.example.com', 'dc02.example.com'],
+        //     'baseDn'              => 'DC=example,DC=com',
+        //     'bindDn'              => 'CN=shield-reader,OU=Service Accounts,DC=example,DC=com',
+        //     'bindPassword'        => '',
+        //     'encryption'          => 'ldaps',
+        //     'userBaseDn'          => 'OU=Users,DC=example,DC=com',
+        //     'loginFilter'         => '(&(objectCategory=person)(objectClass=user))',
+        //     'loginAttributes'     => ['sAMAccountName', 'userPrincipalName'],
+        //     'externalIdAttribute' => 'objectGUID',
+        //     'profileAttributes'   => ['username' => 'sAMAccountName'],
+        // ],
+    ];
+
+    /**
      * @var array<string, string> Lowercase UPN suffix to connection ID.
      */
     public array $loginDomains = [];
@@ -47,36 +69,57 @@ class AuthLDAP extends BaseConfig
      *
      * Override this method to load a named connection from an application-owned provider.
      *
-     * @throws LDAPException If the connection is missing or its ID does not match.
+     * @throws LDAPException If the connection settings or bind password are missing or invalid.
      */
     public function getConnection(string $id): LDAPConnection
     {
-        $connection = $this->connections()[$id] ?? null;
+        $settings = $this->connections[$id] ?? null;
 
-        if ($connection === null || $connection->id !== $id) {
+        if (! is_array($settings)
+            || ! isset($settings['hosts'], $settings['baseDn'], $settings['bindDn'])
+            || array_filter($settings, is_string(...), ARRAY_FILTER_USE_KEY) !== $settings
+        ) {
             throw new LDAPException('invalid_configuration');
         }
 
-        return $connection;
+        try {
+            return new LDAPConnection(
+                $id,
+                $settings['hosts'],
+                $settings['baseDn'],
+                $settings['bindDn'],
+                $settings['bindPassword'] ?? '',
+                ...array_diff_key($settings, ['hosts' => true, 'baseDn' => true, 'bindDn' => true, 'bindPassword' => true]),
+            );
+        } catch (Throwable $exception) {
+            // The constructor received the raw bind password as an argument.
+            throw new LDAPException($exception instanceof LDAPException ? $exception->reason : 'invalid_configuration');
+        }
     }
 
     /**
-     * List the IDs exposed by the configured connection provider.
+     * List the connection IDs declared in the configuration.
      *
      * @return list<string>
      */
     public function connectionIds(): array
     {
-        return array_keys($this->connections());
+        return array_keys($this->connections);
     }
 
     /**
-     * Construct connections on demand so bind secrets stay out of the config cache.
+     * Omit bind passwords from the PHP debug representation of this config.
      *
-     * @return array<string, LDAPConnection>
+     * @return array<string, mixed>
      */
-    protected function connections(): array
+    public function __debugInfo(): array
     {
-        return [];
+        $configuration = get_object_vars($this);
+
+        foreach (array_filter($this->connections, is_array(...)) as $id => $settings) {
+            $configuration['connections'][$id] = array_diff_key($settings, ['bindPassword' => true]);
+        }
+
+        return $configuration;
     }
 }

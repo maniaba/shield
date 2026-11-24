@@ -36,9 +36,8 @@ not chase LDAP referrals.
 
 ## Configure Active Directory
 
-Create **app/Config/AuthLDAP.php**. Load the service-account secret from the
-environment or from your secrets provider. Keep it out of source control and
-application diagnostics.
+Create **app/Config/AuthLDAP.php** and define the directory settings in
+`$connections`. The array key is the connection ID.
 
 ```php
 <?php
@@ -47,38 +46,55 @@ declare(strict_types=1);
 
 namespace Config;
 
-use CodeIgniter\Shield\Authentication\LDAP\LDAPConnection;
 use CodeIgniter\Shield\Config\AuthLDAP as ShieldAuthLDAP;
 
 class AuthLDAP extends ShieldAuthLDAP
 {
     public string $defaultConnection = 'corporate';
 
-    protected function connections(): array
-    {
-        return [
-            'corporate' => new LDAPConnection(
-                id: 'corporate',
-                hosts: ['dc01.example.com', 'dc02.example.com'],
-                baseDn: 'DC=example,DC=com',
-                bindDn: 'CN=shield-reader,OU=Service Accounts,DC=example,DC=com',
-                bindPassword: static fn (): string => (string) env('LDAP_CORPORATE_BIND_PASSWORD'),
-                encryption: 'ldaps',
-                userBaseDn: 'OU=Users,DC=example,DC=com',
-                loginFilter: '(&(objectCategory=person)(objectClass=user)(!(userAccountControl:1.2.840.113556.1.4.803:=2)))',
-                loginAttributes: ['sAMAccountName', 'userPrincipalName'],
-                externalIdAttribute: 'objectGUID',
-                profileAttributes: ['username' => 'sAMAccountName'],
-                provisionUsers: true,
-            ),
-        ];
-    }
+    public array $connections = [
+        'corporate' => [
+            'hosts'               => ['dc01.example.com', 'dc02.example.com'],
+            'baseDn'              => 'DC=example,DC=com',
+            'bindDn'              => 'CN=shield-reader,OU=Service Accounts,DC=example,DC=com',
+            'bindPassword'        => '',
+            'encryption'          => 'ldaps',
+            'port'                => 636,
+            'userBaseDn'          => 'OU=Users,DC=example,DC=com',
+            'loginFilter'         => '(&(objectCategory=person)(objectClass=user)(!(userAccountControl:1.2.840.113556.1.4.803:=2)))',
+            'loginAttributes'     => ['sAMAccountName', 'userPrincipalName'],
+            'externalIdAttribute' => 'objectGUID',
+            'profileAttributes'   => ['username' => 'sAMAccountName'],
+            'provisionUsers'      => true,
+        ],
+    ];
 }
 ```
 
-Supply `LDAP_CORPORATE_BIND_PASSWORD` to the PHP process and set
-`authldap.enabled = true` in your CodeIgniter `.env` file. A service account that
-can only read the necessary entries and attributes is sufficient.
+Enable LDAP and supply the service-account password in your local CodeIgniter
+`.env` file. Keep that file out of source control and limit the service account
+to reading the necessary entries and attributes.
+
+```ini
+authldap.enabled = true
+authldap.connections.corporate.bindPassword = 'replace-with-service-account-password'
+```
+
+For deployment through the PHP process environment, use
+`authldap_connections_corporate_bindPassword` if the environment requires
+underscores. CodeIgniter populates the existing `bindPassword` entry when it
+initializes `AuthLDAP`, using the same environment override as other settings.
+
+CodeIgniter can override existing connection settings with environment keys
+such as `authldap.connections.corporate.hosts.0` or
+`authldap.connections.corporate.port`. Declare connection IDs, option keys,
+and list entries in the PHP array before overriding their values.
+
+Shield redacts bind passwords in `var_dump()` output. Direct reads of
+`$connections` and configuration exports can expose the password, and
+CodeIgniter's configuration cache can write it to disk. To keep the password
+outside the cache, retrieve it through an application-owned connection
+provider. See [Administrative diagnostics](#administrative-diagnostics).
 
 List endpoints in preferred order within a connection. Each endpoint in that
 list must reach the same logical directory and enforce equivalent access rules.
@@ -88,34 +104,40 @@ suffixes to connection IDs in `$loginDomains`. For example, `['research.example.
 The default connection handles unqualified logins and unmapped suffixes. The
 submitted value remains the lookup value, including any suffix.
 
-The connection factory runs on demand so its secret provider stays out of
-CodeIgniter's configuration cache.
-
 ## Configure OpenLDAP
 
 In the configuration above, set `$defaultConnection` to `'openldap'` and use
-the following array in `connections()`. Supply
-`LDAP_OPENLDAP_BIND_PASSWORD` to the PHP process. The server must support the
-StartTLS extension on the port you configure.
+the following `$connections` property. The server must support StartTLS on
+the configured port.
 
 ```php
-return [
-    'openldap' => new LDAPConnection(
-        id: 'openldap',
-        hosts: ['ldap.example.org'],
-        baseDn: 'dc=example,dc=org',
-        bindDn: 'cn=shield-reader,ou=services,dc=example,dc=org',
-        bindPassword: static fn (): string => (string) env('LDAP_OPENLDAP_BIND_PASSWORD'),
-        encryption: 'starttls',
-        userBaseDn: 'ou=people,dc=example,dc=org',
-        loginFilter: '(objectClass=inetOrgPerson)',
-        loginAttributes: ['uid'],
-        externalIdAttribute: 'entryUUID',
-        profileAttributes: ['username' => 'uid'],
-        provisionUsers: true,
-    ),
+public array $connections = [
+    'openldap' => [
+        'hosts'               => ['ldap.example.org'],
+        'baseDn'              => 'dc=example,dc=org',
+        'bindDn'              => 'cn=shield-reader,ou=services,dc=example,dc=org',
+        'bindPassword'        => '',
+        'encryption'          => 'starttls',
+        'port'                => 389,
+        'userBaseDn'          => 'ou=people,dc=example,dc=org',
+        'loginFilter'         => '(objectClass=inetOrgPerson)',
+        'loginAttributes'     => ['uid'],
+        'externalIdAttribute' => 'entryUUID',
+        'profileAttributes'   => ['username' => 'uid'],
+        'provisionUsers'      => true,
+    ],
 ];
 ```
+
+Enable LDAP and provide the password for this connection ID in `.env`.
+
+```ini
+authldap.enabled = true
+authldap.connections.openldap.bindPassword = 'replace-with-service-account-password'
+```
+
+The process environment can supply the same value through
+`authldap_connections_openldap_bindPassword`.
 
 For another LDAPv3 directory, configure the login attributes, entry filter, and
 immutable identifier according to its schema. The configured identifier must
@@ -376,9 +398,10 @@ after the operation. The application login uses `auth('ldap')->attempt()`
 and configured login actions complete through Shield's standard session routes.
 
 To fetch connection settings from a database or another application source,
-override `AuthLDAP::getConnection()` and `AuthLDAP::connectionIds()`. Return a
-validated `LDAPConnection` and resolve its bind secret server-side. Present only
-connection IDs and the operational metadata your administrators need.
+override `AuthLDAP::getConnection()` and `AuthLDAP::connectionIds()`. In
+`getConnection()`, read the credential from your secret store and pass its
+string value as `bindPassword` to the `LDAPConnection` constructor. Present
+only connection IDs and the operational metadata your administrators need.
 
 ### Troubleshooting
 
