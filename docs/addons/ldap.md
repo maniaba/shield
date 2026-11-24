@@ -1,11 +1,11 @@
-# LDAP and Active Directory authentication
+# LDAP and Active Directory Authentication
 
-Shield can verify web login credentials against an LDAPv3 directory and use its
-normal Session authenticator, login actions, users, and authorization checks.
-LDAP is opt-in and requires PHP's `ldap` extension. Follow the regular
-[Shield installation](../getting_started/install.md) before configuring LDAP.
+The LDAP authenticator verifies web login credentials against an LDAPv3
+directory, such as Active Directory or OpenLDAP. It uses Shield's sessions
+and login actions. LDAP is opt-in and requires PHP's `ldap` extension.
+Follow the [Shield installation](../getting_started/install.md) before configuring LDAP.
 
-## Directory and TLS prerequisites
+## Directory and TLS Prerequisites
 
 1. Create a read-only service account. Give it access to the configured search
    base, login attributes, immutable identifier, and any attributes used by
@@ -90,11 +90,13 @@ such as `authldap.connections.corporate.hosts.0` or
 `authldap.connections.corporate.port`. Declare connection IDs, option keys,
 and list entries in the PHP array before overriding their values.
 
-Shield redacts bind passwords in `var_dump()` output. Direct reads of
-`$connections` and configuration exports can expose the password, and
-CodeIgniter's configuration cache can write it to disk. To keep the password
-outside the cache, retrieve it through an application-owned connection
-provider. See [Administrative diagnostics](#administrative-diagnostics).
+!!! warning
+
+    Shield redacts bind passwords in `var_dump()` output. Direct reads of
+    `$connections`, configuration exports, and CodeIgniter's configuration
+    cache can expose the password. To keep the password outside the cache,
+    retrieve it through an application-owned connection provider. See
+    [Administrative diagnostics](#administrative-diagnostics).
 
 List endpoints in preferred order within a connection. Each endpoint in that
 list must reach the same logical directory and enforce equivalent access rules.
@@ -143,12 +145,13 @@ For another LDAPv3 directory, configure the login attributes, entry filter, and
 immutable identifier according to its schema. The configured identifier must
 be unique, readable, and stable across user renames and moves.
 
-## Enable Shield web login
+## Enable Shield Web Login
 
 In **app/Config/Auth.php**, add the `ldap` entry to the existing
 `$authenticators` array. Shield's session filter and login actions use the
-`session` alias to read the session created by LDAP. With the default
-authenticator entries, the property looks like this:
+`session` alias to read the session created by LDAP. Keep
+`$defaultAuthenticator` set to `'session'`. Add the LDAP entry alongside
+the default authenticators.
 
 ```php
 public array $authenticators = [
@@ -160,21 +163,23 @@ public array $authenticators = [
 ```
 
 Set the `login` entry in the existing `$views` array to
-`'\App\Views\auth\ldap_login'`. For an LDAP-only application, set
-`allowRemembering` to `false` in the existing `$sessionConfig` array and set
-these two properties:
+`'\App\Views\auth\ldap_login'`. For the routes shown below, set
+`allowRemembering` to `false` in the existing `$sessionConfig` array. Set
+the following properties so the login form displays only links for routes
+registered in the example.
 
 ```php
 public bool $allowRegistration = false;
 public bool $allowMagicLinkLogins = false;
 ```
 
-Copy Shield's login view to **app/Views/auth/ldap_login.php**. Replace the
-email field and its label with a text field named `username` so users can enter
-either a simple login name or a UPN. Keep the password field and the CSRF field.
+Copy **vendor/codeigniter4/shield/src/Views/login.php** to
+**app/Views/auth/ldap_login.php**. Replace the email field and its label with
+a text field named `username` so users can enter a simple login name or a UPN.
+Keep the password field and the CSRF field.
 
 ```html
-<label for="ldapUsername">Username</label>
+<label for="ldapUsername"><?= lang('Auth.username') ?></label>
 <input id="ldapUsername" type="text" name="username" autocomplete="username" required>
 ```
 
@@ -185,6 +190,8 @@ login destination.
 
 ```php
 <?php
+
+declare(strict_types=1);
 
 namespace App\Controllers;
 
@@ -223,15 +230,16 @@ $routes->get('login', '\CodeIgniter\Shield\Controllers\LoginController::loginVie
 $routes->post('login', '\App\Controllers\Login::loginAction', ['filter' => 'auth-rates']);
 ```
 
-Use session-based CSRF protection for the POST route and apply Shield's
-`auth-rates` filter to the authentication action routes. The LDAP handler
-redirects with an error message only. CodeIgniter's `withInput()` would copy
-the submitted password to session flash data. The native LDAP transport
-redacts password arguments in its own exception frames. Set
-`zend.exception_ignore_args=On` in production PHP settings to keep submitted
-credentials out of exception traces in application code too. [Shield controller filters](../references/controller_filters.md#rate-limiting)
+Enable the `csrf` filter for the POST route and set `$csrfProtection` to
+`'session'` in **app/Config/Security.php**. Apply Shield's `auth-rates`
+filter to the authentication action routes as well. [Shield controller filters](../references/controller_filters.md#rate-limiting)
 
-## Login eligibility
+The failure redirect flashes the error message. CodeIgniter's `withInput()`
+would copy the submitted password to session flash data. Set
+`zend.exception_ignore_args=On` in production PHP settings to keep submitted
+credentials out of exception traces in application code.
+
+## Login Eligibility
 
 The directory evaluates an administrator-defined login filter together with
 equality tests for the configured login attributes. For Active Directory, use
@@ -263,7 +271,7 @@ a distinguished name, first encode the distinguished name according to
 filter assertion. An escaped comma in a DN, for example `CN=Family\, Given`, is
 written as `CN=Family\5c, Given` in a filter assertion.
 
-## Provisioning and migration from local accounts
+## Provisioning and Migration from Local Accounts
 
 The link between a directory account and a Shield user is scoped to a connection
 ID and an immutable directory identifier. Use `objectGUID` for Active Directory
@@ -279,7 +287,7 @@ permit them in your [custom user provider](../customization/user_provider.md).
 For example, map `directory_email` to `mail` and `first_name` to `givenName`.
 Unconfigured fields stay under application control. Profile attributes used by
 application security decisions should be writable by trusted directory
-administrators only. Set `updateProfile: false` on the connection to use the
+administrators only. Set `'updateProfile' => false` on the connection to use the
 configured attributes at provisioning only.
 
 For a migration, start with provisioning disabled. From a trusted operator
@@ -318,7 +326,7 @@ account recovery process. Before enabling the `force-reset` filter on routes
 used by LDAP accounts, include Shield's fix for users without an email/password
 identity. [Force-reset fix](https://github.com/codeigniter4/shield/pull/1411)
 
-## Local-only, LDAP-only, and hybrid login
+## Local-Only, LDAP-Only, and Hybrid Login
 
 For local-only login, keep the ordinary `Session` authenticator under the
 `session` alias. For LDAP-only login, configure `LDAP` as described above and
@@ -338,7 +346,7 @@ action that applies to each operator and can be completed during a directory
 outage. Every other identifier goes to its selected LDAP connection. Directory
 credential failures and outages both deny a new LDAP login.
 
-## Availability and session revocation
+## Availability and Session Revocation
 
 LDAP password login verifies the submitted credentials with the directory.
 The authenticator disables remember-me token issuance on password login. Keep
@@ -354,7 +362,7 @@ the sole permitted web sign-in method, disable public registration and magic
 link routes in Shield, and review any custom password reset, login, or token
 issuance routes that could provide another sign-in path.
 
-## Administrative diagnostics
+## Administrative Diagnostics
 
 Application services can use the directory transport to test configured
 connections and preview a bounded search without provisioning users or changing
@@ -366,9 +374,9 @@ and keep raw results out of ordinary application logs.
 use CodeIgniter\Shield\Authentication\LDAP\LDAPFilter;
 use CodeIgniter\Shield\Exceptions\LDAPException;
 
-$config = config('AuthLDAP');
+$config        = config('AuthLDAP');
 $connectionIds = $config->connectionIds();
-$directory = service('ldapDirectory');
+$directory     = service('ldapDirectory');
 
 try {
     $connection = $config->getConnection('corporate');
@@ -387,15 +395,16 @@ try {
 }
 ```
 
-Use a configured group search base and a trusted group filter with the same
-`preview()` method to inspect groups. For a specific identifier, combine the
-trusted filter with `LDAPFilter::equal($attribute, $identifier)`. LDAP attribute
-names in returned entries are lower-case and values may be binary. To test user
-credentials without creating a Shield user, call the directory's `authenticate()`
-method with that exact-match filter, the password, and the configured eligibility
-filter. Prompt for the password, pass it directly to that method, and discard it
-after the operation. The application login uses `auth('ldap')->attempt()`
-and configured login actions complete through Shield's standard session routes.
+To inspect groups, pass the group base DN and a trusted group filter to
+`preview()`. The search limit is 1 to 100 entries. LDAP attribute names in
+returned entries are lowercase and values may be binary.
+
+To check a user's credentials without provisioning a Shield user, combine the
+connection's login filter and `LDAPFilter::equal($attribute, $identifier)`
+with `LDAPFilter::all()`. Pass the resulting filter, the submitted password,
+and the connection's eligibility filter to the directory's `authenticate()`
+method. Discard the password after the operation. Use `auth('ldap')->attempt()`
+for application sign-in and let Shield complete any configured login actions.
 
 To fetch connection settings from a database or another application source,
 override `AuthLDAP::getConnection()` and `AuthLDAP::connectionIds()`. In
@@ -406,10 +415,16 @@ only connection IDs and the operational metadata your administrators need.
 ### Troubleshooting
 
 - For connection or TLS errors, confirm DNS, port, certificate chain, hostname,
-  and the CA bundle loaded by the web runtime. `ldapsearch -H
-  ldaps://dc01.example.com:636 -x -D '{bind DN}' -W -b 'DC=example,DC=com'
-  -s base '(objectClass=*)' dn` prompts for the service password. For StartTLS,
-  use an `ldap://` URI and `-ZZ` to require the upgrade.
+  and the CA bundle loaded by the web runtime. The following command prompts
+  for the service password.
+
+    ```console
+    ldapsearch -H ldaps://dc01.example.com:636 -x -D '{bind DN}' -W \
+      -b 'DC=example,DC=com' -s base '(objectClass=*)' dn
+    ```
+
+    For StartTLS, use an `ldap://` URI and `-ZZ` to require the upgrade.
+
 - For a service bind failure, verify the service DN, secret, and directory policy.
   For a missing or incomplete result, verify the search base, access controls,
   filters, and timeout settings. Keep searches within the correct naming context
@@ -419,15 +434,13 @@ only connection IDs and the operational metadata your administrators need.
   local account ban or activation requirement. LDAP-specific logs use reason
   codes, and the browser receives Shield's generic login error message.
 
-## Authorization and scope
+## Authorization
 
-Directory group filters can restrict eligibility to sign in. Manage Shield
-authorization groups and permissions through the ordinary
-[Shield authorization APIs](../references/authorization.md). Directory group
-assignments, group ownership and revocation, scheduled synchronization, and
-continuous revalidation are outside this contribution.
+Directory group filters control eligibility during LDAP sign-in. Manage
+application group assignments, permissions, and revocation through the
+[Shield authorization APIs](../references/authorization.md).
 
-## Testing against OpenLDAP
+## Testing Against OpenLDAP
 
 The regular PHPUnit suite does not need a running directory. The optional
 `NativeLDAPDirectoryIntegrationTest` uses the disposable OpenLDAP fixture in
@@ -456,7 +469,7 @@ LDAPTLS_CACERT="$tls_dir/ca.pem" LDAPTLS_REQCERT=demand LDAPTLS_REQSAN=demand \
   SHIELD_LDAP_TEST_PORT=23890 SHIELD_LDAP_TEST_LDAPS_PORT=26360 \
   SHIELD_LDAP_TEST_WRONG_HOST=localhost \
   SHIELD_LDAP_TEST_UNTRUSTED_CA=/etc/ssl/certs/ca-certificates.crt \
-  vendor/bin/phpunit --filter NativeLDAPDirectoryIntegrationTest
+  vendor/bin/phpunit --no-extensions --no-coverage --filter NativeLDAPDirectoryIntegrationTest
 
 docker stop shield-openldap-test
 ```

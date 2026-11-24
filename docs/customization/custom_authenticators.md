@@ -11,10 +11,7 @@ Custom Authenticators enable project-specific authentication strategies such as:
 
 ## Why Custom Authenticators
 
-Shield includes an opt-in authenticator for directory-based web logins. See
-[LDAP and Active Directory authentication](../addons/ldap.md).
-
-Custom authenticators support the following use cases.
+While Shield provides built-in authenticators such as **Session**, **AccessTokens**, **HmacSha256**, **JWT**, and [**LDAP and Active Directory**](../addons/ldap.md), custom authenticators allow you to:
 
 - Enforce project-specific login logic  
 - Integrate new or external authentication mechanisms  

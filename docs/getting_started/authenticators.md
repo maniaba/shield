@@ -19,6 +19,6 @@ Shield provides the following Authenticators:
   you need additional setup. See [JWT Authentication](../addons/jwt.md).
 - **LDAP** authenticator verifies LDAPv3 directory credentials and uses Shield's
   sessions and login actions. It requires additional setup. See
-  [LDAP and Active Directory authentication](../addons/ldap.md).
+  [LDAP and Active Directory Authentication](../addons/ldap.md).
 
-In addition to the authenticators listed above, CodeIgniter Shield allows you to build and register Custom Authenticators by implementing the `AuthenticatorInterface`, enabling completely project-specific authentication strategies (external providers, hardware or device challenges, or any other custom logic), while remaining fully compatible with Shield’s authentication lifecycle and its login/logout event system. For full implementation steps, see [Custom Authenticator](../customization/custom_authenticators.md).
+In addition to the default authenticators listed above, CodeIgniter Shield allows you to build and register Custom Authenticators by implementing the `AuthenticatorInterface`, enabling completely project-specific authentication strategies (external providers, hardware or device challenges, or any other custom logic), while remaining fully compatible with Shield’s authentication lifecycle and its login/logout event system. For full implementation steps, see [Custom Authenticator](../customization/custom_authenticators.md).
