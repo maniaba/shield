@@ -12,6 +12,7 @@ on:
   push:
     branches:
       - develop
+      - ci/jwt-session-revocation
     paths:
       - '**.php'
       - 'composer.json'
