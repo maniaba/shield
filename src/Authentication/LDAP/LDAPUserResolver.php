@@ -16,6 +16,7 @@ namespace CodeIgniter\Shield\Authentication\LDAP;
 use Closure;
 use CodeIgniter\Database\BaseConnection;
 use CodeIgniter\Shield\Entities\User;
+use CodeIgniter\Shield\Entities\UserIdentity;
 use CodeIgniter\Shield\Exceptions\LDAPException;
 use CodeIgniter\Shield\Models\UserIdentityModel;
 use CodeIgniter\Shield\Models\UserModel;
@@ -237,12 +238,12 @@ final readonly class LDAPUserResolver
 
     private function createIdentity(string $connectionId, string $key, int|string $userId): void
     {
-        $this->identities->create([
+        $this->identities->create(new UserIdentity([
             'user_id' => $userId,
             'type'    => self::ID_TYPE,
             'name'    => $connectionId,
             'secret'  => $key,
-        ]);
+        ]));
 
         $identity = $this->identities->getIdentityBySecret(self::ID_TYPE, $key);
         if ($identity === null || (string) $identity->user_id !== (string) $userId) {

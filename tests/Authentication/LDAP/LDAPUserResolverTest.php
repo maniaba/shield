@@ -205,7 +205,7 @@ final class LDAPUserResolverTest extends DatabaseTestCase
         $users      = model(UserModel::class);
         $identities = model(UserIdentityModel::class);
         $failed     = $this->getMockBuilder(UserIdentityModel::class)->onlyMethods(['create'])->getMock();
-        $failed->expects($this->once())->method('create')->willReturnCallback(static function (array $identity) use ($identities): void {
+        $failed->expects($this->once())->method('create')->willReturnCallback(static function (UserIdentity $identity) use ($identities): void {
             $identities->create($identity);
             $identities->create($identity);
         });
